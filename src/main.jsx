@@ -10,12 +10,25 @@ import { iniciarFaseCielo } from './config/cielo.js'
 iniciarTecladoMovil()
 iniciarFaseCielo()
 
-ReactDOM.createRoot(document.getElementById('root')).render(
-  <React.StrictMode>
-    <AuthProvider>
-      <BrowserRouter>
-        <App />
-      </BrowserRouter>
-    </AuthProvider>
-  </React.StrictMode>,
-)
+function arrancar() {
+  ReactDOM.createRoot(document.getElementById('root')).render(
+    <React.StrictMode>
+      <AuthProvider>
+        <BrowserRouter>
+          <App />
+        </BrowserRouter>
+      </AuthProvider>
+    </React.StrictMode>,
+  )
+}
+
+// Modo demostración (VITE_DEMO=true): la API responde desde el navegador con
+// datos inventados (src/demo). Sin la bandera, la app arranca normal.
+if (import.meta.env.VITE_DEMO === 'true') {
+  import('./demo/apiDemo.js').then((m) => {
+    m.install()
+    arrancar()
+  })
+} else {
+  arrancar()
+}

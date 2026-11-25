@@ -422,6 +422,36 @@ function Login() {
             </button>
 
             <p className="lg-nota">Acceso restringido a personal autorizado de LEGUMEX.</p>
+
+            {import.meta.env.VITE_DEMO === 'true' && (
+              <div className="mt-4 rounded-lg border border-outline-variant p-3 text-left font-body-md text-body-md text-on-surface-variant">
+                <p className="mb-2">
+                  <strong className="text-on-surface">Demo con datos inventados.</strong> Cualquier contraseña funciona.
+                </p>
+                <div className="flex flex-wrap gap-2">
+                  <button
+                    type="button"
+                    className="rounded-md border border-outline-variant px-3 py-1.5 text-on-surface"
+                    onClick={() => {
+                      setUsername('demo.admin')
+                      setPassword('demo1234')
+                    }}
+                  >
+                    Entrar como administrador
+                  </button>
+                  <button
+                    type="button"
+                    className="rounded-md border border-outline-variant px-3 py-1.5 text-on-surface"
+                    onClick={() => {
+                      setUsername('demo.consulta')
+                      setPassword('demo1234')
+                    }}
+                  >
+                    Entrar como consulta
+                  </button>
+                </div>
+              </div>
+            )}
           </form>
         </div>
       </div>

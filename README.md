@@ -1,93 +1,81 @@
-# Legumex · Formatos TIC (frontend)
+# Formatos TIC · Control de entregas y devoluciones de equipo
 
-Sistema a medida del área TIC de Agroindustria Legumex para registrar las actas de
-**entrega** y **devolución** de equipo (con firmas y PDF), llevar el inventario de equipos
-y empleados, y consultar el historial por colaborador y por departamento.
+Sistema interno del área de TIC de Agroindustria Legumex para registrar la entrega y la devolución de equipo de cómputo, con firmas y actas listas para imprimir en PDF.
 
-- Rol `admin` (TIC): registra y corrige actas, catálogo y usuarios.
-- Rol `user` (jefaturas / RRHH): solo consulta el historial, corrige las fechas del
-  encabezado y descarga el PDF.
+**🔗 Live demo:** https://formatos-tic-demo.vercel.app
 
-Stack: React 18 + Vite 5 + React Router 7 + Tailwind CSS 3. Backend:
-[`legumexapps_tic_formatos_backend`](https://github.com/Roberto-Santizo/legumexapps_tic_formatos_backend) (Laravel).
+> **Copia de demostración.** Este repositorio es una copia del frontend original ([Roberto-Santizo/leguemxapps_tic_formatos_frontend](https://github.com/Roberto-Santizo/leguemxapps_tic_formatos_frontend)) con un modo demostración agregado. Funciona sin servidor y con **datos inventados: no contiene información real de la empresa**.
 
-## Cómo levantarlo
+![Historial de entregas](docs/historial-entregas.png)
+
+## Qué problema resuelve
+
+Formatos TIC lleva el control de qué equipo tiene cada colaborador, en qué estado se entregó y cuándo se devolvió. Las actas reproducen la hoja física del departamento de TIC: se llenan en pantalla, se firman en el mismo dispositivo y se descargan en PDF con el formato oficial. El sistema quedó en uso en el área de TIC.
+
+## Funcionalidades
+
+- **Gestión de equipos**: inventario con marca, modelo, serie, tipo, estado **nuevo o usado** y características técnicas (procesador, memoria, almacenamiento).
+- **Gestión de usuarios y colaboradores**: cuentas del sistema con rol y colaboradores con su área.
+- **Entregas y devoluciones**: actas con firma del responsable y del encargado de TIC; las devoluciones pueden ser parciales.
+- **Áreas y marcas**: catálogos de departamentos y fabricantes.
+- **Actas en PDF** con el formato oficial, las firmas y las características de cada equipo.
+- **Historial** por colaborador, por departamento y por equipo, con filtros por estado, planta, área y fecha.
+- **Dos roles:** administrador (TIC: registra y corrige actas, catálogos y usuarios) y consulta (ve el historial y descarga los PDF).
+- Diseño adaptado a computadora, tableta y teléfono, con modo oscuro y recorrido guiado.
+
+## Capturas
+
+| Acta de entrega | Acta en PDF |
+|---|---|
+| ![Acta de entrega](docs/acta-entrega.png) | ![Acta en PDF](docs/acta-pdf.png) |
+
+| Inventario de equipos | Nueva entrega |
+|---|---|
+| ![Equipos](docs/equipos.png) | ![Nueva entrega](docs/nueva-entrega.png) |
+
+| Inicio de sesión | Teléfono |
+|---|---|
+| ![Inicio de sesión](docs/login.png) | <img src="docs/movil-nueva-entrega.png" alt="Nueva entrega en el teléfono" width="260"> |
+
+## Cómo entrar a la demo
+
+1. Abre la [demo](https://formatos-tic-demo.vercel.app).
+2. Pulsa **"Entrar como administrador"** (o **"Entrar como consulta"**) y luego **"Iniciar sesión"**.
+
+| Rol | Usuario | Contraseña |
+|---|---|---|
+| Administrador | `demo.admin` | cualquiera |
+| Consulta | `demo.consulta` | cualquiera |
+
+Todo lo que registres en la demo vive solo en tu navegador y se reinicia al recargar la página.
+
+## Stack
+
+- **Frontend (este repositorio):** React 18, Vite 5, React Router 7 y Tailwind CSS 3; jsPDF y html2canvas para las actas; firma en pantalla con react-signature-canvas.
+- **Backend del sistema original:** API REST en Laravel con autenticación JWT ([legumexapps_tic_formatos_backend](https://github.com/Roberto-Santizo/legumexapps_tic_formatos_backend)).
+- **Modo demostración:** `src/demo/` simula la API en el navegador con los mismos recursos y formatos de respuesta que el backend, sin enviar nada a ningún servidor.
+
+## Cómo correrlo en local
+
+Requisitos: Node.js 18 o superior.
 
 ```bash
-cp .env.example .env     # VITE_AUTH_API_URL = base del backend (…/api)
 npm install
-npm run dev              # http://localhost:5173
-npm run build            # genera dist/
+
+# Demo con datos inventados (sin backend)
+npm run dev:demo
+
+# Contra la API real
+cp .env.example .env   # VITE_AUTH_API_URL = base del backend (…/api)
+npm run dev
 ```
 
-En producción corre en Docker (nginx); las variables se leen al arrancar el contenedor.
-Cada push a `main` publica la imagen en Docker Hub, así que se trabaja en ramas y se sube
-a `main` solo con aprobación.
+`npm run build:demo` genera la versión de demostración en `dist/` (es la que publica Vercel, ver `vercel.json`).
 
-## Documentación
+## Mi rol
 
-| Archivo | Para qué |
-|---|---|
-| `CONTEXTO_SISTEMA_DISENO_REGLAS.md` | Qué es el sistema, roles, diseño, decisiones y reglas de trabajo. Empezar aquí. |
-| `CLAUDE.md` | Resumen operativo: comandos, entorno, Docker, arquitectura de `src/`. |
-| `GUIA_DESPLIEGUE_UBUNTU.md` | Checklist de servidor para que las firmas se vean en pantalla y en el PDF. |
-| `paginacion.md` | Copia del contrato de paginación y filtros del backend. |
+Participé como desarrollador y colaborador en mi práctica profesional en el área de TIC de Agroindustria Legumex (agosto a septiembre de 2026). En esta copia agregué el modo demostración con datos inventados para poder mostrar el sistema públicamente.
 
-## Estado (2026-09-27)
+## Más documentación
 
-La rama `tablet` está lista y pendiente de subir a `main`. Trae el diseño para tablet, las
-animaciones de la cordillera, el borrador automático, el aviso de sesión, "Ver acta" /
-"Nueva entrega", el "volver" por origen, el filtro por departamento, el historial del
-colaborador y las actas con el mismo estilo que el resto del sistema. Probada con navegador automatizado en escritorio, teléfono y tablet; falta
-probarla en tablets reales con el backend real.
-
-El 2026-09-29 se sumó a `tablet` el trabajo de la rama `sistema-vivo`: cielo según la hora de
-Guatemala (día, amanecer, atardecer, noche) en el sistema, el login y el menú del
-teléfono; modo oscuro (Automático / Claro / Oscuro, botón junto al nombre); recorrido
-guiado "¿Cómo funciona?" por rol (la primera vez y con el botón **?**); ajustes para
-teclado y toque en iPhone, Android y tablet; y clases de botón. Las hojas de las actas
-también cambian a oscuro (la firma se ve blanca en un recuadro oscuro); el PDF sale
-igual, con la firma en negro.
-Probada con navegador automatizado; falta probarla en equipos reales.
-
-## Pendientes y mejoras sugeridas
-
-Revisión del 2026-09-27. Nada de esto bloquea el uso diario; es para mantenimiento.
-
-### Frontend
-
-- **"Ver acta" tras registrar.** El POST no devuelve el acta creada, así que se descarga
-  la lista completa de entregas (o devoluciones) para encontrar la más reciente del
-  colaborador. Con pocas actas no se nota; con años de datos será lento. Opciones: que el
-  backend devuelva el acta (ver abajo) o pedir `GET /delivery_documents?employeeId=X&limit=1`
-  (el filtro `employeeId` falló en una prueba del 2026-09-11; confirmarlo antes de usarlo).
-- **Peso del código.** El paquete principal pasa de 500 KB. Cargar cada pantalla bajo
-  demanda (`React.lazy`) y `jspdf`/`html2canvas` solo al generar un PDF aceleraría la
-  primera carga.
-- **Accesibilidad.** Contraste AA revisado en claro y oscuro y teclado en el recorrido
-  (2026-09-29); falta una prueba con lector de pantalla real (VoiceOver / TalkBack).
-
-### Backend (`legumexapps_tic_formatos_backend`)
-
-- **Devolver el acta creada** en `POST /delivery_documents` y `POST /return_documents`
-  (hoy responden `data: true`). Evita la búsqueda de arriba.
-- **Duración de la sesión.** El token dura 60 min (`JWT_TTL`). Para jornadas de registro
-  largas: subir `JWT_TTL` en el `.env` o exponer una ruta `/refresh` (tymon/jwt-auth ya lo
-  soporta; `refresh_ttl` está configurado). El frontend ya avisa 5 min antes y guarda el
-  acta a medio llenar como borrador.
-- **Permisos.** Solo crear/editar/borrar actas exige `admin`. Estas rutas solo piden
-  sesión: `delivery_document_details` (POST/PUT/DELETE), `equipments` y `employees`
-  (POST/PUT/DELETE). El frontend no se las muestra al rol `user`, pero conviene agregar el
-  middleware `admin`. Riesgo bajo mientras el sistema esté solo en la red local.
-- **Filtros en el servidor.** Las listas de actas no filtran por texto ni por departamento;
-  el frontend lo hace en el navegador (descarga la lista completa al filtrar). Con mucho
-  historial convendría `?search=` y `?departmentId=`.
-
-### Decisiones tomadas (no son pendientes)
-
-- **Las actas muestran el equipo tal como está hoy.** El renglón del acta lee la serie y
-  el estado (nuevo/usado) del equipo actual; corregir el equipo corrige todas sus actas.
-  Es intencional: permite arreglar un error de captura sin rehacer el acta.
-- **Fechas corregidas solo en ese navegador** (fecha de entrega/devolución y
-  Emisión/Vigencia del encabezado, en `localStorage`). Fue un requerimiento. Si algún
-  día deben verse en todas las PC, hace falta un endpoint en el backend.
+Los documentos técnicos del proyecto original se conservan: [`CONTEXTO_SISTEMA_DISENO_REGLAS.md`](CONTEXTO_SISTEMA_DISENO_REGLAS.md), [`CLAUDE.md`](CLAUDE.md), [`GUIA_DESPLIEGUE_UBUNTU.md`](GUIA_DESPLIEGUE_UBUNTU.md) y [`paginacion.md`](paginacion.md).

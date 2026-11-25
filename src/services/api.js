@@ -648,7 +648,8 @@ const STORAGE_BASE_URL = (
 // documenta el swagger (ej. "signatures/....png").
 export function urlArchivoPublico(path) {
   if (!path) return null
-  if (/^https?:\/\//i.test(path)) return path
+  // data: = firma recién dibujada en el modo demostración (src/demo).
+  if (/^(https?:\/\/|data:)/i.test(path)) return path
   return `${STORAGE_BASE_URL}/storage/${path}`
 }
 
