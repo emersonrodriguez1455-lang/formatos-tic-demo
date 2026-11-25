@@ -1,0 +1,503 @@
+import { useCallback, useEffect, useMemo, useState } from 'react'
+import { Link, useNavigate, useParams } from 'react-router-dom'
+import { useOrigen } from '../utils/origenNavegacion.js'
+import { ArrowLeft, Save } from 'lucide-react'
+import { useAuth } from '../context/AuthContext.jsx'
+import { IndicadorGuardando, mostrarToast } from '../components/Toast.jsx'
+import SearchableSelect from '../components/SearchableSelect.jsx'
+import { SkeletonFormulario } from '../components/Skeleton.jsx'
+import {
+  listarMarcas,
+  crearEquipo,
+  obtenerEquipo,
+  actualizarEquipo,
+  crearCaracteristica,
+  actualizarCaracteristica,
+  obtenerCaracteristicasDeEquipo,
+} from '../services/api.js'
+import {
+  FilasCaracteristicas,
+  CaracteristicasDeEquipo,
+  hayNombreRepetido,
+} from '../components/CaracteristicasEditor.jsx'
+import IsotipoCarga from '../components/IsotipoCarga.jsx'
+/**
+ * Alta y edición de un equipo (POST /equipments, PUT /equipments/{id}).
+ *
+ * Alta: al final del formulario se pregunta "¿Desea agregar características?".
+ * Con "No" se guarda el equipo tal cual. Con "Sí" aparecen filas repetibles
+ * que se envían como POST /caracteristics una vez creado el equipo (la API
+ * exige `equipment_id`, así que no pueden ir antes).
+ *
+ * Edición: se edita el equipo y, debajo, sus características ya persistidas
+ * en sitio (InlineEditableText), sin modales.
+ *
+ * Los campos son los que exige EquipmentRequest en Laravel: name, model,
+ * brand_id, serie, original, is_used, type. La API no tiene un campo
+ * `description` para el equipo -- lo descriptivo vive en Modelo/Tipo y en
+ * las características.
+ */
+
+// Recetas visuales "Sierra" (BRIEF, ola 2), repetidas a propósito.
+const inputClasses =
+  'campo h-11 w-full px-3 disabled:opacity-60'
+const labelClasses = 'text-meta font-semibold leading-4 text-on-surface'
+const ayudaClasses = 'text-meta leading-4 text-on-surface-subtle'
+const enlaceAyuda = 'font-medium text-foco underline-offset-2 hover:text-foco-hover hover:underline'
+const errorCampo = 'animate-hint-in font-label-sm text-label-sm text-error'
+const botonVolver =
+  'btn-secundario h-9 gap-2 self-start px-3'
+const botonSecundario =
+  'btn-secundario h-10 gap-2 px-4'
+const botonPrimario =
+  'btn-primario h-10 gap-2 px-4 shadow-sm disabled:opacity-50 disabled:active:scale-100'
+const tituloSeccion = 'font-headline-md text-headline-md font-bold text-on-surface'
+
+/**
+ * Tipos de equipo que acepta el backend: es el enum App\Enums\EquipmentType,
+ * copiado tal cual (mismos valores y mismo orden) para poder cotejarlo de un
+ * vistazo. El `id` es lo que viaja a la API -- en inglés, no se traduce -- y
+ * el `name` es solo lo que ve la persona.
+ *
+ * Antes aquí había una lista escrita a ojo, con las etiquetas en español
+ * mandadas como valor ("impresora", "teléfono") y hasta un "accesorio" que no
+ * existe en el enum: de las 7 opciones que se sugerían, 4 hacían que el
+ * servidor rechazara el alta con "El tipo de equipo seleccionado no es
+ * válido". Si el backend agrega o quita un tipo, se actualiza esta lista.
+ */
+export const TIPOS_EQUIPO = [
+  { id: 'mouse', name: 'Mouse' },
+  { id: 'keyboard', name: 'Teclado' },
+  { id: 'charger', name: 'Cargador' },
+  { id: 'headset', name: 'Diadema' },
+  { id: 'webcam', name: 'Cámara web' },
+  { id: 'monitor', name: 'Monitor' },
+  { id: 'laptop', name: 'Laptop' },
+  { id: 'desktop', name: 'PC de escritorio' },
+  { id: 'printer', name: 'Impresora' },
+  { id: 'phone', name: 'Teléfono' },
+  { id: 'cable', name: 'Cable' },
+  { id: 'adapter', name: 'Adaptador' },
+  { id: 'other', name: 'Otro' },
+]
+
+/**
+ * Etiqueta en español de un tipo guardado. Si llega un valor que no está en el
+ * enum (un registro viejo, o un tipo nuevo del backend que todavía no está
+ * arriba) se muestra tal cual en vez de dejar el campo vacío.
+ */
+export function etiquetaTipoEquipo(valor) {
+  if (!valor) return '—'
+  return TIPOS_EQUIPO.find((t) => t.id === valor)?.name ?? valor
+}
+
+const VACIO = {
+  name: '',
+  model: '',
+  brand_id: '',
+  serie: '',
+  type: '',
+  original: true,
+  is_used: false,
+}
+
+// Par de botones Sí / No con el mismo lenguaje visual que los chips de
+// accesorios de FormatoActa.
+function ElijeSiNo({ label, value, onChange, disabled, ayuda }) {
+  return (
+    <div className="flex flex-col gap-2">
+      <label className={labelClasses}>{label}</label>
+      <div className="flex gap-2">
+        {[
+          { texto: 'Sí', valor: true },
+          { texto: 'No', valor: false },
+        ].map((opcion) => (
+          <button
+            key={opcion.texto}
+            type="button"
+            disabled={disabled}
+            onClick={() => onChange(opcion.valor)}
+            className={`inline-flex h-11 min-w-[84px] items-center justify-center rounded-boton border px-4 font-body-md text-body-md font-medium transition duration-fast ease-standard active:scale-[0.97] disabled:opacity-60 ${
+              value === opcion.valor
+                ? 'border-tinta bg-tinta text-on-tinta shadow-sm'
+                : 'border-outline-variant bg-white text-on-surface hover:bg-surface-container'
+            }`}
+          >
+            {opcion.texto}
+          </button>
+        ))}
+      </div>
+      {ayuda && <p className={ayudaClasses}>{ayuda}</p>}
+    </div>
+  )
+}
+
+function EquipoForm() {
+  const { id } = useParams()
+  const esEdicion = Boolean(id)
+  const navigate = useNavigate()
+  // Editar abierto desde la ficha ("ver") vuelve a la ficha; desde la lista
+  // o en "nuevo", a la lista como siempre.
+  const origen = useOrigen('/catalogo/equipos', 'Equipos')
+  const { token } = useAuth()
+
+  const [form, setForm] = useState(VACIO)
+  const [marcas, setMarcas] = useState([])
+  const [cargando, setCargando] = useState(esEdicion)
+  const [guardando, setGuardando] = useState(false)
+  const [error, setError] = useState('')
+  const [erroresCampo, setErroresCampo] = useState(null)
+
+  // Alta: pregunta y filas en borrador.
+  const [quiereCaracteristicas, setQuiereCaracteristicas] = useState(null)
+  const [filas, setFilas] = useState([{ name: '', description: '' }])
+
+  // Edición: características ya persistidas.
+  const [caracteristicas, setCaracteristicas] = useState([])
+  const [cargandoCaract, setCargandoCaract] = useState(esEdicion)
+
+  useEffect(() => {
+    let vivo = true
+    listarMarcas(token)
+      .then((data) => vivo && setMarcas(Array.isArray(data) ? data : []))
+      .catch(() => vivo && setMarcas([]))
+    return () => {
+      vivo = false
+    }
+  }, [token])
+
+  const cargarCaracteristicas = useCallback(async () => {
+    if (!esEdicion) return
+    setCargandoCaract(true)
+    try {
+      const data = await obtenerCaracteristicasDeEquipo(token, Number(id))
+      setCaracteristicas(data)
+    } catch {
+      setCaracteristicas([])
+    } finally {
+      setCargandoCaract(false)
+    }
+  }, [esEdicion, id, token])
+
+  useEffect(() => {
+    if (!esEdicion) return
+    let vivo = true
+    setCargando(true)
+    obtenerEquipo(token, Number(id))
+      .then((equipo) => {
+        if (!vivo || !equipo) return
+        setForm({
+          name: equipo.name ?? '',
+          model: equipo.model ?? '',
+          brand_id: equipo.brand_id ?? '',
+          serie: equipo.serie ?? '',
+          type: equipo.type ?? '',
+          original: Boolean(equipo.original),
+          is_used: Boolean(equipo.is_used),
+        })
+      })
+      .catch((err) => vivo && setError(err.message || 'No se pudo cargar el equipo'))
+      .finally(() => vivo && setCargando(false))
+    cargarCaracteristicas()
+    return () => {
+      vivo = false
+    }
+  }, [esEdicion, id, token, cargarCaracteristicas])
+
+  function set(campo, valor) {
+    setForm((f) => ({ ...f, [campo]: valor }))
+  }
+
+  const filasValidas = useMemo(
+    () => filas.filter((f) => f.name.trim() && f.description.trim()),
+    [filas],
+  )
+
+  const hayDuplicadoEnBorrador = useMemo(
+    () =>
+      filasValidas.some((f, i) =>
+        hayNombreRepetido(
+          f.name,
+          filasValidas.filter((_, j) => j !== i).map((x) => x.name),
+        ),
+      ),
+    [filasValidas],
+  )
+
+  const completo =
+    form.name.trim() && form.model.trim() && form.brand_id && form.serie.trim() && form.type.trim()
+
+  // Cuando Laravel rechaza por validación (422) manda el primer error de campo
+  // también en `message`, y ese mismo texto ya se pinta debajo del campo que
+  // corresponde -- así que la caja roja del final lo repetía palabra por
+  // palabra. Solo se muestra si el mensaje NO es uno de los que ya están
+  // visibles bajo un campo (un error de red o del servidor sigue apareciendo).
+  const erroresVisiblesEnCampos = ['name', 'model', 'brand_id', 'serie', 'type']
+    .map((campo) => erroresCampo?.[campo]?.[0])
+    .filter(Boolean)
+  const errorGeneral = error && !erroresVisiblesEnCampos.includes(error) ? error : ''
+
+  async function handleSubmit(e) {
+    e.preventDefault()
+    if (!completo || hayDuplicadoEnBorrador) return
+
+    setGuardando(true)
+    setError('')
+    setErroresCampo(null)
+
+    const payload = {
+      name: form.name.trim(),
+      model: form.model.trim(),
+      brand_id: Number(form.brand_id),
+      serie: form.serie.trim(),
+      type: form.type.trim(),
+      original: Boolean(form.original),
+      is_used: Boolean(form.is_used),
+    }
+
+    try {
+      if (esEdicion) {
+        await actualizarEquipo(token, Number(id), payload)
+      } else {
+        const creado = await crearEquipo(token, payload)
+        const nuevoId = creado?.id
+        if (quiereCaracteristicas && nuevoId && filasValidas.length > 0) {
+          for (const fila of filasValidas) {
+            await crearCaracteristica(token, {
+              name: fila.name.trim(),
+              description: fila.description.trim(),
+              equipment_id: nuevoId,
+            })
+          }
+        }
+      }
+      mostrarToast(esEdicion ? 'Equipo actualizado' : 'Equipo creado')
+      navigate(origen.ruta, { replace: origen.propio })
+    } catch (err) {
+      setError(err.message || 'No se pudo guardar el equipo')
+      setErroresCampo(err.errors || null)
+    } finally {
+      setGuardando(false)
+    }
+  }
+
+  return (
+    <div className="animate-view-in flex-1 px-4 pt-6 pb-10 tablet:px-8 tablet:pt-8 md:px-8 md:pt-10">
+      {/* Mismo carril de 1200px que la lista del catálogo (ver y editar no
+          cambian de ancho respecto a ella). */}
+      <div className="mx-auto flex max-w-[1200px] flex-col gap-stack-lg">
+        <Link to={origen.ruta} className={botonVolver}>
+          <ArrowLeft className="h-4 w-4 shrink-0" strokeWidth={1.75} />
+          {origen.etiqueta}
+        </Link>
+
+        <div className="-mt-1 md:mt-0">
+          <div className="flex items-center gap-3 font-eyebrow text-eyebrow uppercase text-on-surface-variant">
+            <span aria-hidden="true" className="h-px w-7 bg-outline" />
+            Catálogo / Equipos / {esEdicion ? 'Editar' : 'Nuevo'}
+          </div>
+          <h1 className="mt-1.5 font-display-lg text-titulo-movil text-on-surface md:text-display-lg">
+            {esEdicion ? 'Editar equipo' : 'Nuevo equipo'}
+          </h1>
+          <p className="mt-1 font-body-lg text-body-lg text-on-surface-variant">
+            {esEdicion
+              ? 'Cambia los datos del equipo y sus características.'
+              : 'Registra el equipo y, si quieres, sus características desde ahora.'}
+          </p>
+        </div>
+
+        {cargando ? (
+          <SkeletonFormulario campos={6} />
+        ) : (
+          <form
+            onSubmit={handleSubmit}
+            className="flex flex-col gap-6 rounded-tarjeta bg-white p-4 shadow-tarjeta md:p-6"
+          >
+            <section className="flex flex-col gap-5">
+              <h2 className={tituloSeccion}>Datos del equipo</h2>
+
+              {/* Desde xl (carril ancho): 4 columnas -- Nombre (2) · Modelo ·
+                  Marca, y Serie · Tipo · Original · Usado --, para que los
+                  campos no queden estirados a lo ancho. */}
+              <div className="grid grid-cols-1 gap-5 sm:grid-cols-2 xl:grid-cols-4">
+                <div className="flex flex-col gap-2 sm:col-span-2">
+                  <label className={labelClasses}>Nombre</label>
+                  <input
+                    className={inputClasses}
+                    value={form.name}
+                    disabled={guardando}
+                    maxLength={255}
+                    onChange={(e) => set('name', e.target.value)}
+                    placeholder="Ej. Laptop Dell Latitude"
+                    required
+                  />
+                  {erroresCampo?.name?.[0] && (
+                    <p className={errorCampo}>{erroresCampo.name[0]}</p>
+                  )}
+                </div>
+
+                <div className="flex flex-col gap-2">
+                  <label className={labelClasses}>Modelo</label>
+                  <input
+                    className={inputClasses}
+                    value={form.model}
+                    disabled={guardando}
+                    maxLength={255}
+                    onChange={(e) => set('model', e.target.value)}
+                    placeholder="Ej. Latitude 5440"
+                    required
+                  />
+                  {erroresCampo?.model?.[0] && (
+                    <p className={errorCampo}>{erroresCampo.model[0]}</p>
+                  )}
+                </div>
+
+                <div className="flex flex-col gap-2">
+                  <label className={labelClasses}>Marca</label>
+                  <SearchableSelect
+                    options={marcas}
+                    value={form.brand_id}
+                    onChange={(v) => set('brand_id', v)}
+                    disabled={guardando}
+                    placeholder="Selecciona una marca"
+                    emptyOptionsText="No hay marcas registradas todavía."
+                  />
+                  <p className={ayudaClasses}>
+                    ¿Falta una?{' '}
+                    <Link to="/catalogo/marcas" className={enlaceAyuda}>
+                      Regístrala en Marcas
+                    </Link>
+                    .
+                  </p>
+                  {erroresCampo?.brand_id?.[0] && (
+                    <p className={errorCampo}>{erroresCampo.brand_id[0]}</p>
+                  )}
+                </div>
+
+                <div className="flex flex-col gap-2">
+                  <label className={labelClasses}>Serie</label>
+                  <input
+                    className={inputClasses}
+                    autoCapitalize="characters"
+                    autoCorrect="off"
+                    spellCheck={false}
+                    value={form.serie}
+                    disabled={guardando}
+                    maxLength={255}
+                    onChange={(e) => set('serie', e.target.value)}
+                    placeholder="Ej. 5CD1234XYZ"
+                    required
+                  />
+                  {erroresCampo?.serie?.[0] && (
+                    <p className={errorCampo}>{erroresCampo.serie[0]}</p>
+                  )}
+                </div>
+
+                <div className="flex flex-col gap-2">
+                  <label className={labelClasses}>Tipo</label>
+                  {/* Lista cerrada, no texto libre: el backend valida contra un
+                      enum y cualquier otra cosa se rechaza al guardar. Mismo
+                      componente que ya usan Marca, Empleado y Equipo en el
+                      resto del sistema -- desplegable con buscador en
+                      escritorio, hoja completa en móvil. */}
+                  <SearchableSelect
+                    options={TIPOS_EQUIPO}
+                    value={form.type}
+                    onChange={(valor) => set('type', valor)}
+                    disabled={guardando}
+                    placeholder="Selecciona el tipo de equipo"
+                  />
+                  {erroresCampo?.type?.[0] && (
+                    <p className={errorCampo}>{erroresCampo.type[0]}</p>
+                  )}
+                </div>
+
+                <ElijeSiNo
+                  label="¿Es original?"
+                  value={form.original}
+                  disabled={guardando}
+                  onChange={(v) => set('original', v)}
+                />
+                <ElijeSiNo
+                  label="¿Está usado?"
+                  value={form.is_used}
+                  disabled={guardando}
+                  onChange={(v) => set('is_used', v)}
+                />
+              </div>
+            </section>
+
+            {/* Segunda sección dentro de la misma tarjeta, separada con un
+                filete (como el formulario del mockup). */}
+            <section className="flex flex-col gap-5 border-t border-outline-variant pt-6">
+              <h2 className={tituloSeccion}>Características</h2>
+
+              {esEdicion ? (
+                <CaracteristicasDeEquipo
+                  equipmentId={Number(id)}
+                  caracteristicas={caracteristicas}
+                  cargando={cargandoCaract}
+                  onCrear={async (payload) => {
+                    await crearCaracteristica(token, payload)
+                    await cargarCaracteristicas()
+                  }}
+                  onActualizar={async (caractId, payload) => {
+                    await actualizarCaracteristica(token, caractId, payload)
+                    await cargarCaracteristicas()
+                  }}
+                />
+              ) : (
+                <>
+                  <ElijeSiNo
+                    label="¿Desea agregar características?"
+                    value={quiereCaracteristicas}
+                    disabled={guardando}
+                    onChange={setQuiereCaracteristicas}
+                    ayuda="Con “No” el equipo se guarda sin características; podrás agregarlas después desde la lista."
+                  />
+
+                  {quiereCaracteristicas === true && (
+                    <div className="animate-drop-in">
+                      <FilasCaracteristicas filas={filas} onChange={setFilas} disabled={guardando} />
+                    </div>
+                  )}
+                </>
+              )}
+            </section>
+
+            {errorGeneral && (
+              <p className="animate-hint-in font-label-sm text-label-sm text-error rounded-boton border border-error/30 bg-error-container/40 px-3 py-2">
+                {errorGeneral}
+              </p>
+            )}
+
+            {/* Fila de botones: filete arriba y, como antes del rediseño,
+                Cancelar + primario alineados a la derecha (en móvil el
+                primario queda arriba, a todo lo ancho). */}
+            <div className="flex flex-col-reverse gap-3 border-t border-outline-variant pt-5 sm:flex-row sm:justify-end">
+              <Link to={origen.ruta} className={botonSecundario}>
+                Cancelar
+              </Link>
+              <button
+                type="submit"
+                disabled={guardando || !completo || hayDuplicadoEnBorrador}
+                className={botonPrimario}
+              >
+                {guardando ? (
+                  <IsotipoCarga className="h-3" />
+                ) : (
+                  <Save className="h-4 w-4" strokeWidth={1.75} />
+                )}
+                {esEdicion ? 'Guardar cambios' : 'Crear equipo'}
+              </button>
+            </div>
+          </form>
+        )}
+      </div>
+
+      <IndicadorGuardando activo={guardando} />
+    </div>
+  )
+}
+
+export default EquipoForm

@@ -1,0 +1,134 @@
+import { Link } from 'react-router-dom'
+import { ChevronRight, CalendarClock } from 'lucide-react'
+import { LISTA_FORMATOS, VIGENCIA_DOCUMENTOS, VIGENCIA_DOCUMENTOS_STORAGE_KEY } from '../config/formatos.js'
+import InlineEditableText from '../components/InlineEditableText.jsx'
+import useLocalStorageState from '../hooks/useLocalStorageState.js'
+import SaludoDelDia from '../components/SaludoDelDia.jsx'
+import { useAuth } from '../context/AuthContext.jsx'
+
+/**
+ * Landing de Historial de Actas: una tarjeta por cada formato físico activo
+ * (ORDEN_FORMATOS), igual patrón que Catalogo.jsx. Cada una lleva a
+ * /historial/:tipo -- "Entrega de Equipo" y "Devolución de Equipo" ya
+ * tienen datos reales; los formatos inactivos, abiertos por URL, muestran
+ * "Próximamente" hasta que el backend exponga sus endpoints.
+ */
+function Historial() {
+  // El rol usuario (RRHH) no elimina ni edita: los textos de esta pantalla
+  // le dicen solo lo que sí puede hacer (ver, buscar y descargar el PDF).
+  const { isAdmin } = useAuth()
+  // Vigencia editorial de los formatos (Emisión/Vigencia del membrete) --
+  // el mismo campo que ya es editable en FormatoActa.jsx (Nueva Acta), pero
+  // el rol "user" no entra ahí (queda restringido a Historial), así que
+  // también se puede corregir desde aquí. Mismo storage, mismo valor.
+  const [vigenciaDocumentos, setVigenciaDocumentos] = useLocalStorageState(
+    VIGENCIA_DOCUMENTOS_STORAGE_KEY,
+    VIGENCIA_DOCUMENTOS,
+  )
+
+  return (
+    <div className="flex-1 animate-view-in px-4 pt-6 pb-10 tablet:px-8 tablet:pt-8 md:px-8 md:pt-10">
+      <div className="max-w-[1200px] mx-auto flex flex-col gap-stack-lg">
+        <div>
+          <SaludoDelDia />
+          <div className="flex items-center gap-3 font-eyebrow text-eyebrow uppercase text-on-surface-variant">
+            <span aria-hidden="true" className="h-px w-7 bg-outline" />
+            Historial
+          </div>
+          <h1 className="mt-1.5 font-display-lg text-titulo-movil text-on-surface md:text-display-lg">
+            Historial de Actas
+          </h1>
+          <p className="mt-1 font-body-lg text-body-lg text-on-surface-variant">
+            {isAdmin
+              ? 'Elige el formato para ver, buscar y eliminar las actas ya registradas.'
+              : 'Elige el formato para ver, buscar y descargar en PDF las actas ya registradas.'}
+          </p>
+        </div>
+
+        <div data-recorrido="vigencia" className="flex flex-wrap items-center gap-x-6 gap-y-2 rounded-tarjeta bg-white px-5 py-3.5 shadow-tarjeta">
+          <div className="flex items-center gap-2 text-on-surface-variant">
+            <CalendarClock className="h-4 w-4 shrink-0" strokeWidth={1.75} />
+            <span className="font-mono text-micro font-medium uppercase tracking-[0.1em]">Vigencia de los formatos</span>
+          </div>
+          <div className="flex items-center gap-1.5 font-body-md text-body-md text-on-surface">
+            <span className="text-on-surface-variant">Emisión:</span>
+            <InlineEditableText
+              value={vigenciaDocumentos.emision}
+              onChange={(valor) => setVigenciaDocumentos((v) => ({ ...v, emision: valor }))}
+              title="Clic para corregir la fecha de emisión"
+              className="font-medium"
+            />
+          </div>
+          <div className="flex items-center gap-1.5 font-body-md text-body-md text-on-surface">
+            <span className="text-on-surface-variant">Vigencia:</span>
+            <InlineEditableText
+              value={vigenciaDocumentos.vigencia}
+              onChange={(valor) => setVigenciaDocumentos((v) => ({ ...v, vigencia: valor }))}
+              title="Clic para corregir la fecha de vigencia"
+              className="font-medium"
+            />
+          </div>
+        </div>
+
+        {/* Solo 2 formatos activos hoy -- una grilla fluida en vez de un tope
+            fijo de columnas evita que quede una tercera columna vacía (como
+            pasaba antes con 3 tarjetas en xl:grid-cols-3) y las tarjetas se
+            ven más grandes al tener todo el ancho disponible para repartirse
+            entre solo dos. Separación, mínimo por tarjeta, radio, relleno,
+            ícono y título son los mismos de Catalogo.jsx (la pantalla de
+            referencia): antes cada una de las tres pantallas hermanas tenía
+            los suyos y se notaba que eran de momentos distintos. */}
+        <div data-recorrido="formatos-historial" className="grid gap-stack-lg" style={{ gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))' }}>
+          {LISTA_FORMATOS.map((formato) => {
+            const Icon = formato.icon
+            return (
+              <Link
+                key={formato.id}
+                to={`/historial/${formato.id}`}
+                data-reveal
+                className="group flex flex-col gap-stack-md rounded-tarjeta bg-white p-4 shadow-tarjeta transition duration-base ease-standard hover:-translate-y-0.5 hover:shadow-flotante active:scale-[0.99] md:p-6"
+              >
+                <div className="flex items-start justify-between gap-3">
+                  <div className="grid h-14 w-14 shrink-0 place-items-center rounded-xl bg-surface-container-high text-on-surface transition-colors duration-base ease-standard group-hover:bg-surface-container-highest">
+                    <Icon className="h-6 w-6" strokeWidth={1.75} />
+                  </div>
+                  {/* Código del formato: decorativo, igual que en Nueva Acta. */}
+                  <span className="inline-flex h-6 items-center rounded-full border border-outline-variant bg-white px-2.5 font-mono text-micro tracking-[0.1em] text-on-surface-variant">
+                    {formato.codigo}
+                  </span>
+                </div>
+
+                <div className="flex flex-col gap-1.5">
+                  <h2 className="font-headline-md text-headline-md text-on-surface">
+                    {formato.tituloCorto}
+                  </h2>
+                  <p className="font-body-md text-body-md text-on-surface-variant">
+                    {(!isAdmin && formato.descripcionHistorialLectura) || formato.descripcionHistorial || formato.descripcion}
+                  </p>
+                </div>
+
+                <div className="mt-auto flex items-center justify-between gap-2 border-t border-outline-variant pt-3">
+                  <span className="font-mono text-micro uppercase tracking-[0.1em] text-on-surface-variant">
+                    {formato.id !== 'entrega' && formato.id !== 'devolucion'
+                      ? 'Próximamente'
+                      : !isAdmin
+                        ? 'Buscar · Ver · PDF'
+                        : formato.id === 'entrega'
+                          ? 'Buscar · Ver · Eliminar'
+                          : 'Buscar · Ver'}
+                  </span>
+                  <ChevronRight
+                    className="h-4 w-4 shrink-0 text-outline transition duration-base ease-standard group-hover:translate-x-0.5 group-hover:text-on-surface"
+                    strokeWidth={1.75}
+                  />
+                </div>
+              </Link>
+            )
+          })}
+        </div>
+      </div>
+    </div>
+  )
+}
+
+export default Historial

@@ -1,0 +1,1372 @@
+@tailwind base;
+@tailwind components;
+/* ── Clases del sistema: botones y campos ───────────────────────────────
+   Definen SOLO el aspecto (color, borde, letra, transición, presión); el tamaño
+   (h-9/h-10, px-3/px-4, ancho) va como utilidad en cada uno, así cada botón
+   conserva su medida. Un cambio aquí llega a todo el sistema y al modo oscuro.
+     btn-primario     negro (tinta), el principal de la pantalla
+     btn-secundario   blanco con borde (Cancelar, Editar, volver, Reintentar…)
+     btn-icono        solo ícono (ver, editar) en tablas y tarjetas
+     btn-icono-peligro  solo ícono que borra (gris, rojo al pasar el mouse)
+     campo            input / textarea de formulario */
+@layer components {
+  .btn-primario {
+    @apply inline-flex items-center justify-center rounded-boton bg-tinta font-body-md text-body-md font-medium text-on-tinta transition duration-fast ease-standard hover:bg-tinta-hover active:scale-[0.97];
+  }
+  .btn-secundario {
+    @apply inline-flex items-center justify-center rounded-boton border border-outline-variant bg-white font-body-md text-body-md font-medium text-on-surface transition duration-fast ease-standard hover:bg-surface-container active:scale-[0.97];
+  }
+  .btn-icono {
+    @apply inline-flex items-center justify-center rounded-boton text-on-surface-variant transition duration-fast ease-standard hover:bg-surface-container hover:text-on-surface active:scale-[0.90];
+  }
+  .btn-icono-peligro {
+    @apply inline-flex items-center justify-center rounded-boton text-on-surface-variant transition duration-fast ease-standard hover:bg-error-container/60 hover:text-error active:scale-[0.90];
+  }
+  .campo {
+    @apply rounded-boton border border-outline-variant bg-white font-body-md text-input-movil text-on-surface transition duration-fast ease-standard placeholder:text-on-surface-subtle hover:[&:not(:focus)]:border-outline md:text-body-md;
+  }
+}
+
+@tailwind utilities;
+
+/* ── Tablet: el diseño móvil a tamaño de tablet ────────────────────────
+   Una tablet (táctil, 600px o más de ancho y de alto; un teléfono
+   horizontal no cuenta) recibe el mismo diseño que el teléfono
+   (ver screens en tailwind.config.js), pero los tamaños del sistema están en
+   rem: subir la base agranda letra, espacios, radios, botones y tarjetas en
+   proporción, en vez de dejar el diseño del teléfono chico en una pantalla
+   grande. 19px = ×1.19 sobre los 16px de siempre (escritorio y teléfono no
+   cambian). */
+@media (min-width: 600px) and (min-height: 600px) and (hover: none) and (pointer: coarse) {
+  html {
+    font-size: 19px;
+  }
+}
+
+/* ── Sistema visual "Sierra" (chepes2) ───────────────────────────────────
+   Base global: papel, tinta, foco azul, tiempos/curvas de movimiento y las
+   animaciones que usan las pantallas vía clase (animate-view-in, data-reveal).
+   Los colores y demás tokens viven en tailwind.config.js. */
+
+:root {
+  /* Solo las dos que usa el CSS de abajo; el resto de tiempos, curvas y
+     colores son tokens de tailwind.config.js (duration-*, ease-*, papel...). */
+  --duration-page: 280ms;
+  --ease-standard: cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+html,
+body,
+#root {
+  height: 100%;
+}
+
+body {
+  margin: 0;
+  background: rgb(var(--c-background));
+  color: rgb(var(--c-on-surface));
+  font-family: 'Inter', ui-sans-serif, system-ui, sans-serif;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+input::placeholder,
+textarea::placeholder {
+  color: rgb(var(--c-on-surface-subtle));
+}
+
+/* ── Foco: UN solo indicador por tipo de elemento ──────────────────────
+   - Botones, enlaces, tarjetas clicables, etc.: anillo azul 2px con 2px de
+     separación en :focus-visible. `outline` sigue el radio propio del
+     elemento, así que no se fuerza border-radius (una tarjeta de 16px
+     conserva su anillo redondo).
+   - Campos de texto, select y textarea: el navegador los marca como
+     :focus-visible también con el mouse, así que no llevan anillo: el borde
+     pasa a tinta y un filete de 1px por dentro de la sombra lo engrosa a
+     2px (como el mockup). Reemplaza el borde + anillo azules que pone
+     @tailwindcss/forms. Las pantallas NO ponen clases de foco propias en
+     sus inputs; las que las traen (la hoja de papel) siguen ganando porque
+     las utilidades van después de la capa base. */
+:where(a, button, summary, [tabindex], [role='button']):focus-visible {
+  outline: 2px solid rgb(var(--c-foco));
+  outline-offset: 2px;
+}
+
+@layer base {
+  [type='text']:focus,
+  input:where(:not([type])):focus,
+  [type='email']:focus,
+  [type='url']:focus,
+  [type='password']:focus,
+  [type='number']:focus,
+  [type='date']:focus,
+  [type='datetime-local']:focus,
+  [type='month']:focus,
+  [type='search']:focus,
+  [type='tel']:focus,
+  [type='time']:focus,
+  [type='week']:focus,
+  [multiple]:focus,
+  textarea:focus,
+  select:focus {
+    outline: 2px solid transparent;
+    outline-offset: 2px;
+    border-color: rgb(var(--c-on-surface));
+    box-shadow: 0 0 0 1px rgb(var(--c-on-surface));
+  }
+}
+
+/* Scrollbars finas y neutras, acordes al papel. */
+* {
+  scrollbar-width: thin;
+  scrollbar-color: rgb(var(--c-outline) / 0.6) transparent;
+}
+*::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+*::-webkit-scrollbar-track {
+  background: transparent;
+}
+*::-webkit-scrollbar-thumb {
+  background: rgb(var(--c-outline) / 0.6);
+  border-radius: 9999px;
+  border: 2px solid transparent;
+  background-clip: padding-box;
+}
+*::-webkit-scrollbar-thumb:hover {
+  background: rgb(var(--c-outline));
+  background-clip: padding-box;
+}
+
+/* ── Contenedor principal sobre la cordillera ──────────────────────────
+   AppLayout pinta la sierra fija al pie y el <main data-sheet> scrollea por
+   encima, transparente. RESPALDO: ninguna pantalla trae hoy su raíz con
+   `bg-background` (papel opaco), pero si una nueva lo hace taparía la
+   montaña; aquí se vuelve transparente solo la raíz directa. */
+main[data-sheet] > .bg-background {
+  background-color: transparent;
+}
+
+/* ── Transición de entrada de pantalla ─────────────────────────────────
+   `animate-view-in` la usan casi todas las vistas (y filas/tarjetas nuevas).
+   Se conserva el nombre de la clase, pero con la curva y duración del mockup
+   (pageIn: 8px hacia arriba, 280ms, curva estándar). */
+@keyframes viewIn {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+  /* Termina en `none` (no en translateY(0)): con fill-mode `both` un transform
+     residual convierte la raíz en contenedor de los hijos `position: fixed`
+     (buscador a pantalla completa, paneles) y los deja atrapados. */
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+.animate-view-in {
+  /* `backwards`, no `both`: con `both` Chrome deja al final un transform de
+     identidad (matrix(1,0,0,1,0,0)) aunque el keyframe termine en `none`, y
+     la raíz de la pantalla atrapaba a los hijos `position: fixed` (la espera
+     con logo quedaba dentro del área de contenido). Al terminar, el elemento
+     vuelve a su estilo propio, que ya es el estado final. */
+  animation: viewIn var(--duration-page) var(--ease-standard) backwards;
+}
+
+/* ── Revelado de tarjetas al hacer scroll (mockup: cardReveal) ─────────
+   Se activa con el atributo data-reveal en una tarjeta. Solo en navegadores
+   con scroll-driven animations; los demás muestran la tarjeta sin más. Usa
+   `translate` (no `transform`) para no pelear con el scale de :active. */
+@keyframes cardReveal {
+  from {
+    opacity: 0;
+    translate: 0 18px;
+  }
+  /* `none` y no `0 0`: igual que viewIn, un translate residual atraparía a
+     los hijos position: fixed. */
+  to {
+    opacity: 1;
+    translate: none;
+  }
+}
+@supports (animation-timeline: view()) {
+  [data-reveal] {
+    animation: cardReveal linear both;
+    animation-timeline: view();
+    animation-range: entry 0% entry 55%;
+  }
+}
+@media not all and (min-width: 768px) and (hover: hover) and (pointer: fine) {
+  [data-reveal] {
+    animation: none;
+  }
+}
+
+/* ── Destello de la cordillera (SierraFondo.jsx) ───────────────────────
+   Franja de luz que cruza cada capa de izquierda a derecha (translateX en
+   unidades del viewBox de 2560, desde fuera por la izquierda hasta fuera por
+   la derecha) inclinada con skewX: avanza primero por la base, así el brillo
+   sube desde abajo. El cruce ocupa el 40% de un ciclo de 11s (~1.5s sobre la
+   parte visible de la capa, que mide el doble de la pantalla); el resto
+   descansa fuera de vista.
+   Solo `transform` (lo compone la GPU), sin movimiento reducido: nada. */
+@keyframes sierraBrillo {
+  0% {
+    transform: translateX(0) skewX(24deg);
+  }
+  40%,
+  100% {
+    transform: translateX(3400px) skewX(24deg);
+  }
+}
+.sierra-brillo {
+  transform: translateX(0) skewX(24deg);
+  animation: sierraBrillo 11s cubic-bezier(0.45, 0, 0.25, 1) infinite backwards;
+}
+@media (prefers-reduced-motion: reduce) {
+  .sierra-brillo {
+    animation: none;
+    visibility: hidden;
+  }
+}
+
+/* ── Ráfagas de viento (SierraFondo.jsx) ───────────────────────────────
+   Cada ráfaga es un segmento de 0.28 de su curva (pathLength=1) que entra por
+   la izquierda y sale por el remolino: el dashoffset va de 0.28 (aún fuera) a
+   -1 (ya pasó). Aparece y se desvanece en el 38% de un ciclo de 14s. */
+@keyframes sierraViento {
+  0% {
+    stroke-dashoffset: 0.28;
+    opacity: 0;
+  }
+  6% {
+    opacity: 1;
+  }
+  30% {
+    opacity: 1;
+  }
+  38%,
+  100% {
+    stroke-dashoffset: -1;
+    opacity: 0;
+  }
+}
+.sierra-viento {
+  fill: none;
+  stroke: currentColor;
+  stroke-opacity: 0.28;
+  stroke-width: 1.6px;
+  stroke-linecap: round;
+  vector-effect: non-scaling-stroke;
+  stroke-dasharray: 0.28 2;
+  stroke-dashoffset: 0.28;
+  opacity: 0;
+  animation: sierraViento 14s cubic-bezier(0.4, 0, 0.2, 1) infinite backwards;
+}
+@media (prefers-reduced-motion: reduce) {
+  .sierra-viento {
+    animation: none;
+    visibility: hidden;
+  }
+}
+
+/* ── Cordillera de fondo (SierraFondo.jsx) ─────────────────────────────
+   Tres capas con deriva lenta; en móvil quedan quietas (el mockup las
+   detiene para no gastar batería ni distraer al hacer scroll). */
+@media not all and (min-width: 768px) and (hover: hover) and (pointer: fine) {
+  [data-sierra] svg {
+    animation: none !important;
+  }
+}
+
+/* ── Toast: nunca encima de botones fijos ─────────────────────────────
+   Toast.jsx lo deja abajo en móvil (<640) y arriba a la derecha desde sm:.
+   Estas reglas lo recolocan cuando hay algo fijo que no debe tapar.
+
+   1) Hojas con barra de acciones fija (`data-barra-inferior`). Toast.jsx
+      mide la barra (ResizeObserver) y deja en el contenedor `data-sobre-barra`
+      + `--alto-barra` (alto real, safe-area incluida: 64/90/112/116px según
+      ancho, botones y error de validación) y `--derecha-barra` (distancia del
+      borde derecho de los botones al del viewport). El toast va 12px por
+      encima de la barra en todos los tamaños (arriba tapaba el eyebrow de la
+      hoja) y, desde md:, con el borde derecho de sus botones. No depende de
+      :has(), así que vale también en Firefox < 121.
+   2) Cajón móvil abierto (su overlay lleva `data-cajon-abierto`, <768): el
+      toast va DENTRO del cajón (ancho min(19rem, 86%) − 0.75rem por lado; 19rem = 304px), por
+      encima de la tarjeta de perfil / "Cerrar Sesión" (pie del cajón 20px +
+      tarjeta 108px + 12px de aire). Gana a la regla 1 (va después).
+   3) Sin :has() (p. ej. Firefox ESR 115 en Windows 7/8) la regla 2 no
+      existe: en móvil (<640) el toast sin barra sube siempre a 140px, por
+      encima de "Cerrar Sesión" con o sin cajón (la regla 1 sigue midiendo).
+      Desde sm: se queda arriba a la derecha, que ya no toca el cajón. */
+/* Al pasar de una hoja a una lista (o al revés) con el aviso visible, el
+   cambio de altura se desliza en vez de saltar. */
+[data-toaster] {
+  transition:
+    bottom 200ms var(--ease-standard),
+    left 200ms var(--ease-standard),
+    right 200ms var(--ease-standard);
+}
+[data-toaster][data-sobre-barra] {
+  top: auto;
+  bottom: calc(var(--alto-barra, 112px) + 12px + var(--vv-abajo, 0px));
+  /* El aviso nuevo aparece arriba y el que ya estaba no se mueve. */
+  flex-direction: column-reverse;
+}
+[data-toaster][data-sobre-barra] > * {
+  animation-name: toastInAbajo;
+}
+@media not all and (min-width: 768px) and (hover: hover) and (pointer: fine) {
+  /* Mismo ancho que la columna de botones de la barra (padding 16px). */
+  [data-toaster][data-sobre-barra] {
+    left: 16px;
+    right: 16px;
+  }
+}
+@media (min-width: 768px) and (hover: hover) and (pointer: fine) {
+  [data-toaster][data-sobre-barra] {
+    right: var(--derecha-barra, 42px);
+  }
+}
+@media not all and (min-width: 768px) and (hover: hover) and (pointer: fine) {
+  body:has([data-cajon-abierto]) [data-toaster] {
+    top: auto;
+    bottom: 8.75rem; /* 140px */
+    left: 0.75rem; /* 12px */
+    right: auto;
+    width: calc(min(19rem, 86%) - 1.5rem);
+    align-items: stretch;
+  }
+}
+@supports not selector(:has(*)) {
+  @media not all and (min-width: 640px) and (hover: hover) and (pointer: fine) {
+    [data-toaster]:not([data-sobre-barra]) {
+      top: auto;
+      bottom: calc(140px + env(safe-area-inset-bottom));
+    }
+    /* Sobre una hoja, sin :has() no hay regla del cajón: que tampoco tape
+       "Cerrar Sesión" si el cajón está abierto. */
+    [data-toaster][data-sobre-barra] {
+      bottom: max(calc(var(--alto-barra) + 12px), calc(140px + env(safe-area-inset-bottom)));
+    }
+  }
+}
+
+/* ── Movimiento reducido ───────────────────────────────────────────────
+   Igual que el mockup: todo lo animado se resuelve al instante. */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+  .animate-view-in,
+  [data-reveal],
+  [data-sierra] * {
+    animation: none !important;
+  }
+}
+
+/* ── Impresión: fuera la cordillera y el menú ──────────────────────────── */
+@media print {
+  [data-sierra],
+  [data-no-print] {
+    display: none !important;
+  }
+}
+
+/* ── Login (chepes3) ─────────────────────────────────────────────────────
+   Pantalla de inicio de sesión "Sierra": telón verde que baja con borde de
+   cordillera, sol, cuatro capas de montaña con parallax al mouse (--mx/--my
+   las fija Login.jsx), titular línea por línea y tarjeta blanca que sube.
+   Todas las clases llevan prefijo lg- y los keyframes lg* para no chocar con
+   el resto del sistema. --lg-adelanto recorta la coreografía cuando el telón
+   ya se vio en esta sesión del navegador. */
+
+.lg-raiz {
+  --lg-bosque: #0b2a1e;
+  --lg-acento: #4d7c2a;
+  --lg-linea: #9bc96a;
+  --lg-exito: #15803d;
+  --lg-papel: #f4f5f1;
+  --lg-mono: 'JetBrains Mono', ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  --lg-ease: cubic-bezier(0.4, 0, 0.2, 1);
+  --lg-salida: cubic-bezier(0.22, 1, 0.36, 1);
+  --lg-adelanto: 0ms;
+  --mx: 0;
+  --my: 0;
+  position: relative;
+  min-height: 100vh;
+  min-height: 100dvh;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  background: var(--lg-papel);
+  color: #171717;
+  font-family: 'Inter', ui-sans-serif, system-ui, sans-serif;
+  overflow: hidden;
+  padding-bottom: clamp(96px, 22vh, 220px);
+}
+.lg-raiz.lg-sin-telon {
+  --lg-adelanto: 1400ms;
+}
+
+/* Telón */
+.lg-telon {
+  position: fixed;
+  inset: 0;
+  z-index: 60;
+  pointer-events: none;
+  animation: lgCurtainDown 1500ms cubic-bezier(0.76, 0, 0.24, 1) 1000ms both;
+}
+.lg-telon-fondo {
+  position: absolute;
+  inset: 0;
+  background: var(--lg-bosque);
+}
+.lg-telon-borde {
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: calc(100% - 1px);
+  width: 100%;
+  height: clamp(80px, 14vh, 140px);
+  display: block;
+  fill: var(--lg-bosque);
+}
+.lg-telon-centro {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 22px;
+}
+.lg-telon-logo {
+  height: clamp(72px, 10vw, 120px);
+  width: auto;
+  filter: brightness(0) invert(1);
+  animation: lgCurtainLogo 1000ms var(--lg-salida) both;
+}
+.lg-telon-linea {
+  width: 120px;
+  height: 1px;
+  background: rgba(255, 255, 255, 0.25);
+  overflow: hidden;
+}
+.lg-telon-linea > span {
+  display: block;
+  width: 100%;
+  height: 100%;
+  background: var(--lg-linea);
+  transform-origin: left;
+  animation: lgLineGrow 900ms cubic-bezier(0.65, 0, 0.35, 1) 150ms both;
+}
+
+/* Cielo: sol, neblina y nubes */
+.lg-cielo {
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  overflow: hidden;
+}
+.lg-sol {
+  position: absolute;
+  right: 18%;
+  bottom: calc(clamp(140px, 30vh, 280px) - 70px);
+  width: clamp(180px, 22vw, 300px);
+  aspect-ratio: 1;
+  border-radius: 9999px;
+  translate: calc(var(--mx) * -6px) calc(var(--my) * -6px);
+  transition: translate 1200ms var(--lg-salida);
+  background: radial-gradient(circle at 50% 50%, #eef2df 0%, #e6ecd2 55%, rgba(230, 236, 210, 0) 72%);
+  animation:
+    lgSunRise 2400ms var(--lg-salida) calc(1700ms - var(--lg-adelanto)) both,
+    lgSunBreath 9s ease-in-out calc(4200ms - var(--lg-adelanto)) infinite;
+}
+.lg-neblina {
+  position: absolute;
+  left: 0;
+  bottom: calc(clamp(140px, 30vh, 280px) - 40px);
+  width: 200%;
+  height: 90px;
+  z-index: 1;
+  background:
+    radial-gradient(ellipse 18% 50% at 20% 50%, rgba(255, 255, 255, 0.75), rgba(255, 255, 255, 0) 70%),
+    radial-gradient(ellipse 22% 45% at 65% 55%, rgba(255, 255, 255, 0.6), rgba(255, 255, 255, 0) 70%);
+  animation: lgDrift 70s linear infinite;
+}
+.lg-nubes {
+  position: absolute;
+  left: 0;
+  top: 8%;
+  width: 200%;
+  height: 38%;
+  translate: calc(var(--mx) * -10px) 0;
+  transition: translate 1200ms var(--lg-salida);
+  background:
+    radial-gradient(ellipse 9% 22% at 12% 40%, rgba(255, 255, 255, 0.9), rgba(255, 255, 255, 0) 70%),
+    radial-gradient(ellipse 13% 18% at 38% 62%, rgba(255, 255, 255, 0.7), rgba(255, 255, 255, 0) 70%),
+    radial-gradient(ellipse 8% 20% at 71% 30%, rgba(255, 255, 255, 0.85), rgba(255, 255, 255, 0) 70%),
+    radial-gradient(ellipse 11% 16% at 90% 58%, rgba(255, 255, 255, 0.65), rgba(255, 255, 255, 0) 70%);
+  animation:
+    lgFade 1600ms var(--lg-ease) calc(1700ms - var(--lg-adelanto)) both,
+    lgDrift 140s linear calc(1700ms - var(--lg-adelanto)) infinite;
+}
+
+/* Cordillera: cuatro capas, cada una con su profundidad de parallax */
+.lg-sierra {
+  position: fixed;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  height: clamp(140px, 30vh, 280px);
+  pointer-events: none;
+}
+.lg-capa {
+  position: absolute;
+  inset: 0 -48px -12px -48px;
+  overflow: hidden;
+  /* Recorta solo a los lados (la deriva mueve un SVG del doble de ancho) y
+     deja libre arriba, para que las cimas no se corten al agrandarse
+     (.lg-zoom). Navegadores sin `clip`: se quedan con `hidden`. */
+  overflow: clip visible;
+  transition: translate 900ms var(--lg-salida);
+  animation: lgSierraRise 1200ms var(--lg-salida) calc(1500ms - var(--lg-adelanto)) both;
+}
+.lg-capa svg {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 200%;
+  height: 100%;
+  display: block;
+  fill: var(--lg-bosque);
+}
+.lg-capa-1 {
+  inset: -34% -48px -12px -48px;
+  translate: calc(var(--mx) * -4px) calc(var(--my) * -1px);
+  animation-duration: 1400ms;
+}
+.lg-capa-1 svg { fill-opacity: 0.05; animation: lgDrift 200s linear infinite reverse; }
+.lg-capa-2 { translate: calc(var(--mx) * -8px) calc(var(--my) * -2px); }
+.lg-capa-2 svg { fill-opacity: 0.1; animation: lgDrift 120s linear infinite; }
+.lg-capa-3 {
+  translate: calc(var(--mx) * -16px) calc(var(--my) * -4px);
+  animation-delay: calc(1620ms - var(--lg-adelanto));
+}
+.lg-capa-3 svg { fill-opacity: 0.35; animation: lgDrift 80s linear infinite reverse; }
+.lg-capa-4 {
+  translate: calc(var(--mx) * -28px) calc(var(--my) * -7px);
+  animation-delay: calc(1740ms - var(--lg-adelanto));
+}
+.lg-capa-4 svg { fill-opacity: 1; animation: lgDrift 52s linear infinite; }
+
+/* Acercamiento de profundidad ("Ken Burns"): cada capa crece muy despacio
+   desde su base y vuelve (18s ida, 18s vuelta). La del frente crece más que
+   las de atrás, y esa diferencia da la sensación de acercarse a la sierra.
+   Usa la propiedad `scale` (no `transform`, que ya usan la subida inicial y
+   la deriva). Empieza cuando la cordillera terminó de subir. */
+.lg-zoom {
+  position: absolute;
+  inset: 0;
+  transform-origin: 50% 100%;
+  animation: lgZoom 18s cubic-bezier(0.45, 0, 0.55, 1) 2.6s infinite alternate both;
+}
+.lg-capa-1 .lg-zoom { --lg-zoom: 1.025; }
+.lg-capa-2 .lg-zoom { --lg-zoom: 1.04; }
+.lg-capa-3 .lg-zoom { --lg-zoom: 1.06; }
+.lg-capa-4 .lg-zoom { --lg-zoom: 1.08; }
+@keyframes lgZoom { from { scale: 1; } to { scale: var(--lg-zoom, 1.04); } }
+
+/* Ráfagas de viento sobre la cordillera (mismo trazo que la app, .sierra-viento). */
+.lg-viento {
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: -38%;
+  width: 100%;
+  height: 72%;
+  overflow: visible;
+  color: var(--lg-bosque);
+  pointer-events: none;
+}
+
+/* Pie mono sobre la capa más oscura */
+.lg-pie {
+  position: fixed;
+  z-index: 1;
+  left: clamp(24px, 5vw, 72px);
+  right: clamp(24px, 5vw, 72px);
+  bottom: max(16px, 2.4vh);
+  display: flex;
+  justify-content: space-between;
+  gap: 4px 16px;
+  flex-wrap: wrap;
+  font-family: var(--lg-mono);
+  font-size: 11px;
+  letter-spacing: 0.1em;
+  color: #ffffff;
+  animation: lgFade 800ms var(--lg-ease) calc(2400ms - var(--lg-adelanto)) both;
+}
+.lg-pie > span:last-child { color: #cfd8cc; }
+
+/* Columna de texto */
+.lg-copia {
+  position: relative;
+  z-index: 2;
+  flex: 1 1 480px;
+  min-width: 0;
+  padding: clamp(20px, 5vh, 48px) clamp(24px, 5vw, 72px);
+  display: flex;
+  flex-direction: column;
+}
+.lg-copia-logo {
+  height: clamp(44px, 8vh, 72px);
+  width: auto;
+  align-self: flex-start;
+  animation: lgFade 600ms var(--lg-ease) calc(1500ms - var(--lg-adelanto)) both;
+}
+.lg-copia-cuerpo { padding-top: clamp(20px, 7vh, 64px); }
+.lg-eyebrow {
+  font-family: var(--lg-mono);
+  font-size: 11px;
+  letter-spacing: 0.12em;
+  color: #525252;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  animation: lgDropIn 500ms var(--lg-ease) calc(1620ms - var(--lg-adelanto)) both;
+}
+.lg-eyebrow::before {
+  content: '';
+  flex: 0 0 28px;
+  height: 1px;
+  background: #a3a3a3;
+  transform-origin: left;
+  animation: lgLineGrow 700ms var(--lg-ease) calc(1620ms - var(--lg-adelanto)) both;
+}
+.lg-titular {
+  font-size: clamp(36px, min(6vw, 9vh), 76px);
+  line-height: 0.98;
+  font-weight: 800;
+  letter-spacing: -0.045em;
+  color: var(--lg-bosque);
+  margin: 22px 0 0;
+  display: flex;
+  flex-direction: column;
+}
+.lg-titular > span {
+  display: block;
+  overflow: hidden;
+  padding-bottom: 0.06em;
+}
+.lg-titular > span > span {
+  display: block;
+  animation: lgLineUp 900ms var(--lg-salida) calc(1720ms - var(--lg-adelanto)) both;
+}
+.lg-titular > span + span > span {
+  color: var(--lg-acento);
+  animation-delay: calc(1840ms - var(--lg-adelanto));
+}
+.lg-bajada {
+  font-size: 17px;
+  line-height: 1.55;
+  color: #404040;
+  max-width: 440px;
+  margin: 22px 0 0;
+  text-wrap: pretty;
+  animation: lgDropIn 600ms var(--lg-ease) calc(1800ms - var(--lg-adelanto)) both;
+}
+@media (max-height: 720px) {
+  .lg-bajada { display: none; }
+}
+
+/* Tarjeta */
+.lg-lado-tarjeta {
+  position: relative;
+  z-index: 2;
+  flex: 1 1 420px;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: clamp(16px, 4vh, 48px) 24px;
+}
+.lg-tarjeta {
+  width: 100%;
+  max-width: 420px;
+  background: #ffffff;
+  border-radius: 16px;
+  padding: clamp(20px, 4vh, 32px);
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.06), 0 0 0 1px #e5e5e5, 0 32px 64px -32px rgba(11, 42, 30, 0.28);
+  /* Termina a los 2.5 s, junto con el telón. La opacidad va LINEAL y por
+     separado del salto: así la tarjeta no se ve "completa" antes de quedar
+     interactiva (Login.jsx quita `inert` en el animationend de lgFade). */
+  animation:
+    lgCardRise 620ms var(--lg-salida) calc(1880ms - var(--lg-adelanto)) both,
+    lgFade 620ms linear calc(1880ms - var(--lg-adelanto)) both;
+}
+.lg-titulo {
+  font-size: clamp(28px, 5vh, 36px);
+  line-height: 1.05;
+  font-weight: 700;
+  letter-spacing: -0.03em;
+  margin: 0 0 8px;
+  color: var(--lg-bosque);
+}
+.lg-titulo-ok {
+  color: var(--lg-exito);
+  display: flex;
+  flex-wrap: wrap;
+}
+.lg-letra {
+  display: inline-block;
+  white-space: pre;
+  animation: lgLetterHop 360ms cubic-bezier(0.34, 1.56, 0.64, 1) both;
+}
+.lg-titulo-ok .lg-letra {
+  animation-name: lgLetterHop, lgLetterGreen;
+  animation-duration: 360ms, 360ms;
+  animation-timing-function: cubic-bezier(0.34, 1.56, 0.64, 1), ease;
+}
+.lg-saludo {
+  font-size: 16px;
+  line-height: 1.5;
+  color: #525252;
+  margin: 0 0 clamp(16px, 3vh, 28px);
+}
+.lg-aviso {
+  display: flex;
+  gap: 8px;
+  align-items: flex-start;
+  background: #fef3c7;
+  border: 1px solid #e5e5e5;
+  border-radius: 8px;
+  padding: 12px;
+  margin-bottom: 20px;
+  animation: lgDropIn 200ms var(--lg-ease) both;
+}
+.lg-aviso svg { flex-shrink: 0; margin-top: 2px; color: #ea580c; }
+.lg-aviso-titulo { font-size: 14px; line-height: 1.43; font-weight: 500; color: #171717; }
+.lg-aviso-texto { font-size: 14px; line-height: 1.43; color: #262626; overflow-wrap: anywhere; }
+
+.lg-campos {
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+}
+.lg-campos.lg-sacude { animation: lgShake 420ms cubic-bezier(0.36, 0.07, 0.19, 0.97) both; }
+.lg-campo { display: flex; flex-direction: column; gap: 8px; }
+.lg-etiqueta { font-size: 12px; font-weight: 600; color: #171717; }
+.lg-input {
+  width: 100%;
+  background: #ffffff;
+  color: #111827;
+  border: 1px solid #000000;
+  border-radius: 6px;
+  padding: 10px 12px;
+  font-size: 14px;
+  line-height: 20px;
+  box-shadow: none;
+  transition: border-color 300ms ease, box-shadow 300ms ease;
+}
+.lg-input::placeholder { color: #737373; }
+.lg-input:focus { outline: none; border-color: #000000; box-shadow: 0 0 0 1px #000000; }
+.lg-input-pwd { padding-right: 46px; }
+.lg-ok .lg-input {
+  border-color: var(--lg-exito);
+  box-shadow: 0 0 0 3px rgba(21, 128, 61, 0.15);
+}
+.lg-ojo {
+  position: absolute;
+  right: 4px;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 36px;
+  height: 36px;
+  border: none;
+  background: transparent;
+  border-radius: 6px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #525252;
+  transition: background-color 150ms ease, color 150ms ease;
+}
+.lg-ojo:hover { background: #f5f5f5; color: #171717; }
+
+.lg-boton {
+  width: 100%;
+  min-height: 44px;
+  background: #000000;
+  color: #ffffff;
+  border: none;
+  border-radius: 8px;
+  padding: 12px 16px;
+  font-size: 14px;
+  font-weight: 500;
+  cursor: pointer;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.05);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  transition: transform 150ms var(--lg-ease), background-color 150ms var(--lg-ease), box-shadow 150ms var(--lg-ease);
+}
+.lg-boton:hover { background: #262626; }
+.lg-boton:active { transform: scale(0.97) translateY(1px); background: #262626; }
+.lg-boton:disabled { cursor: default; }
+.lg-boton .lg-boton-icono {
+  flex-shrink: 0;
+  transition: transform 200ms var(--lg-ease);
+}
+.lg-boton:hover .lg-boton-icono { transform: translateX(3px) scale(1.15); }
+.lg-boton[aria-busy='true'] { pointer-events: none; }
+.lg-ok .lg-boton,
+.lg-ok .lg-boton:hover {
+  background: var(--lg-exito);
+  pointer-events: none;
+  animation: lgOkPop 420ms var(--lg-salida) both;
+}
+.lg-check path {
+  stroke-dasharray: 26;
+  animation: lgCheckDraw 420ms var(--lg-salida) both;
+}
+.lg-isotipo {
+  position: relative;
+  display: inline-block;
+  height: 16px;
+  flex-shrink: 0;
+}
+.lg-isotipo img {
+  height: 16px;
+  width: auto;
+  display: block;
+  filter: brightness(0) invert(1);
+}
+.lg-isotipo img:first-child { opacity: 0.28; }
+.lg-isotipo img + img {
+  position: absolute;
+  left: 0;
+  top: 0;
+  animation: lgLogoLoop 1100ms cubic-bezier(0.65, 0, 0.35, 1) infinite;
+}
+.lg-nota {
+  border-top: 1px solid #e5e5e5;
+  padding-top: 16px;
+  font-family: var(--lg-mono);
+  font-size: 11px;
+  line-height: 1.5;
+  letter-spacing: 0.02em;
+  color: #525252;
+}
+
+@media not all and (min-width: 761px) and (hover: hover) and (pointer: fine) {
+  .lg-input { font-size: 16px; }
+}
+
+@keyframes lgCurtainDown { from { transform: translateY(0); } to { transform: translateY(calc(100% + 160px)); visibility: hidden; } }
+@keyframes lgCurtainLogo { from { opacity: 0; transform: translateY(14px) scale(0.96); } to { opacity: 1; transform: none; } }
+@keyframes lgLineGrow { from { transform: scaleX(0); } to { transform: scaleX(1); } }
+@keyframes lgSunRise { from { transform: translateY(90px); opacity: 0; } to { transform: translateY(0); opacity: 1; } }
+@keyframes lgSunBreath { 0%, 100% { transform: scale(1); } 50% { transform: scale(1.04); } }
+@keyframes lgDrift { from { transform: translateX(0); } to { transform: translateX(-50%); } }
+@keyframes lgSierraRise { from { transform: translateY(28px); opacity: 0; } to { transform: translateY(0); opacity: 1; } }
+@keyframes lgFade { from { opacity: 0; } to { opacity: 1; } }
+@keyframes lgDropIn { from { opacity: 0; transform: translateY(-4px); } to { opacity: 1; transform: translateY(0); } }
+@keyframes lgLineUp { from { transform: translateY(105%); } to { transform: translateY(0); } }
+@keyframes lgCardRise { from { transform: translateY(24px) scale(0.98); } to { transform: none; } }
+@keyframes lgLetterHop { 0% { transform: translateY(0); } 35% { transform: translateY(-10px); } 65% { transform: translateY(2px); } 100% { transform: translateY(0); } }
+@keyframes lgLetterGreen { 0% { color: #0b2a1e; } 40%, 100% { color: #15803d; } }
+@keyframes lgShake { 0%, 100% { transform: translateX(0); } 20% { transform: translateX(-8px); } 40% { transform: translateX(7px); } 60% { transform: translateX(-5px); } 80% { transform: translateX(3px); } }
+@keyframes lgOkPop { 0% { transform: scale(1); } 40% { transform: scale(1.03); } 100% { transform: scale(1); } }
+@keyframes lgCheckDraw { from { stroke-dashoffset: 26; } to { stroke-dashoffset: 0; } }
+@keyframes lgLogoLoop {
+  0% { clip-path: inset(0 100% 0 0); }
+  55% { clip-path: inset(0 0 0 0); }
+  80% { clip-path: inset(0 0 0 0); opacity: 1; }
+  100% { clip-path: inset(0 0 0 0); opacity: 0; }
+}
+
+/* Movimiento reducido: paisaje quieto, entradas instantáneas, sin parallax */
+@media (prefers-reduced-motion: reduce) {
+  .lg-raiz *,
+  .lg-raiz *::before {
+    animation-duration: 1ms !important;
+    animation-delay: 0ms !important;
+    animation-iteration-count: 1 !important;
+    translate: none !important;
+    transition-duration: 1ms !important;
+  }
+  .lg-raiz svg,
+  .lg-zoom,
+  .lg-neblina,
+  .lg-nubes { animation: none !important; }
+  .lg-isotipo img + img { animation: none !important; clip-path: inset(0 0 0 0); }
+}
+
+/* ── Carga con el isotipo, espera con logo y "acta registrada" ─────────
+   Mismo lenguaje del mockup Sierra. Ver IsotipoCarga.jsx, EsperaLogo.jsx y
+   ActaRegistrada.jsx. Con movimiento reducido la regla global de arriba deja
+   todo quieto (los bucles corren una sola vez). */
+
+/* Isotipo que se llena de izquierda a derecha (botones y cargas cortas). */
+.isotipo-carga {
+  position: relative;
+  display: inline-block;
+  flex-shrink: 0;
+  line-height: 0;
+}
+.isotipo-carga img {
+  height: 100%;
+  width: auto;
+  display: block;
+}
+.isotipo-carga img:first-child { opacity: 0.28; }
+.isotipo-carga img + img {
+  position: absolute;
+  left: 0;
+  top: 0;
+  animation: isoLlenado 1100ms cubic-bezier(0.65, 0, 0.35, 1) infinite;
+}
+.isotipo-carga--claro img { filter: brightness(0) invert(1); }
+.isotipo-carga--tinta img { filter: brightness(0); }
+@keyframes isoLlenado {
+  0% { clip-path: inset(0 100% 0 0); }
+  55% { clip-path: inset(0 0 0 0); }
+  80% { clip-path: inset(0 0 0 0); opacity: 1; }
+  100% { clip-path: inset(0 0 0 0); opacity: 0; }
+}
+
+/* Espera de pantalla completa: aparece a los 250ms para que una operación
+   rápida no parpadee; mientras tanto ya bloquea los clics. */
+.espera-logo {
+  position: fixed;
+  inset: 0;
+  z-index: 80;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 18px;
+  background: rgb(var(--c-white) / 0.86);
+  animation: esperaEntra 200ms cubic-bezier(0.4, 0, 0.2, 1) 250ms both;
+}
+.espera-logo__logo {
+  position: relative;
+  display: block;
+  height: 34px;
+}
+.espera-logo__logo img {
+  height: 34px;
+  width: auto;
+  display: block;
+}
+/* Base: las montañas del isotipo en silueta negra (mockup de Tickets); encima
+   se llena el isotipo a color. */
+.espera-logo__logo img:first-child { filter: brightness(0); opacity: 0.16; }
+.espera-logo__logo img + img {
+  position: absolute;
+  inset: 0;
+  animation: esperaLlenado 900ms linear infinite;
+}
+.espera-logo__barra {
+  width: 132px;
+  height: 2px;
+  border-radius: 9999px;
+  background: rgb(var(--c-outline-variant));
+  overflow: hidden;
+}
+.espera-logo__barra span {
+  display: block;
+  height: 100%;
+  width: 40%;
+  background: rgb(var(--c-on-surface));
+  animation: esperaBarra 1100ms cubic-bezier(0.65, 0, 0.35, 1) infinite;
+}
+@keyframes esperaEntra { from { opacity: 0; } to { opacity: 1; } }
+@keyframes esperaLlenado {
+  0% { clip-path: inset(100% 0 0 0); }
+  55% { clip-path: inset(0 0 0 0); }
+  85% { clip-path: inset(0 0 0 0); }
+  100% { clip-path: inset(0 0 100% 0); }
+}
+@keyframes esperaBarra {
+  from { transform: translateX(-100%); }
+  to { transform: translateX(250%); }
+}
+
+/* "Acta registrada": check que se dibuja, dos anillos y chispas. */
+.acta-lista {
+  position: fixed;
+  inset: 0;
+  z-index: 80;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 1.5rem;
+  background: rgba(10, 10, 10, 0.4);
+  animation: esperaEntra 200ms cubic-bezier(0.4, 0, 0.2, 1) both;
+}
+/* En rem: en tablet (letra base 19px) la tarjeta crece como el resto. */
+.acta-lista__tarjeta {
+  width: 100%;
+  max-width: 26.25rem;
+  border-radius: 1rem;
+  background: rgb(var(--c-white));
+  padding: 2rem;
+  text-align: center;
+  box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.1), 0 4px 6px -4px rgba(0, 0, 0, 0.1);
+  animation: actaTarjeta 420ms cubic-bezier(0.34, 1.56, 0.64, 1) both;
+}
+.acta-lista__sello {
+  position: relative;
+  width: 96px;
+  height: 96px;
+  margin: 0 auto 20px;
+}
+.acta-lista__anillo {
+  position: absolute;
+  inset: 0;
+  border-radius: 9999px;
+  border: 1px solid #15803d;
+  animation: actaAnillo 900ms cubic-bezier(0.4, 0, 0.2, 1) both;
+}
+.acta-lista__circulo {
+  position: absolute;
+  inset: 16px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 9999px;
+  background: #dcfce7;
+  animation: actaSello 480ms cubic-bezier(0.34, 1.56, 0.64, 1) both;
+}
+.acta-lista__circulo path {
+  stroke-dasharray: 26;
+  animation: actaCheck 520ms cubic-bezier(0.4, 0, 0.2, 1) 240ms both;
+}
+.acta-lista__chispa {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: 0;
+  height: 0;
+}
+.acta-lista__chispa span {
+  position: absolute;
+  left: -3px;
+  top: -3px;
+  display: block;
+  width: 6px;
+  height: 6px;
+  border-radius: 9999px;
+  animation: actaChispa 820ms cubic-bezier(0.4, 0, 0.2, 1) both;
+}
+/* "Ver acta" / "Cerrar" entran cuando el check ya se dibujó. */
+.acta-lista__acciones {
+  animation: actaAcciones 320ms cubic-bezier(0.4, 0, 0.2, 1) 520ms both;
+}
+@keyframes actaAcciones {
+  from { opacity: 0; transform: translateY(6px); }
+  to { opacity: 1; transform: none; }
+}
+@keyframes actaTarjeta {
+  from { opacity: 0; transform: scale(0.88) translateY(12px); }
+  to { opacity: 1; transform: none; }
+}
+@keyframes actaAnillo {
+  0% { transform: scale(0.55); opacity: 0.55; }
+  100% { transform: scale(1.35); opacity: 0; }
+}
+@keyframes actaSello {
+  0% { transform: scale(0.4); opacity: 0; }
+  60% { transform: scale(1.08); opacity: 1; }
+  100% { transform: none; opacity: 1; }
+}
+@keyframes actaCheck {
+  from { stroke-dashoffset: 26; }
+  to { stroke-dashoffset: 0; }
+}
+@keyframes actaChispa {
+  0% { transform: translateY(0) scale(0.6); opacity: 0; }
+  30% { opacity: 1; }
+  100% { transform: translateY(-46px) scale(0.4); opacity: 0; }
+}
+
+/* Pastilla blanca de "guardando" dentro del contenedor de avisos (Toast.jsx,
+   IndicadorGuardando): isotipo con base en silueta negra que se llena a color
+   y texto mono. Entra a los 150ms para no parpadear en respuestas instantáneas. */
+.guardando-pastilla {
+  pointer-events: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  align-self: flex-end;
+  border-radius: 9999px;
+  border: 1px solid rgb(var(--c-outline-variant));
+  background: rgb(var(--c-white));
+  padding: 8px 16px;
+  font-family: 'JetBrains Mono', ui-monospace, monospace;
+  font-size: 11px;
+  line-height: 16px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  white-space: nowrap;
+  color: rgb(var(--c-on-surface-variant));
+  box-shadow: 0 4px 12px -2px rgba(0, 0, 0, 0.08);
+  animation: guardandoEntra 200ms cubic-bezier(0.4, 0, 0.2, 1) 150ms backwards;
+}
+@media not all and (min-width: 640px) and (hover: hover) and (pointer: fine) {
+  .guardando-pastilla { align-self: center; }
+}
+.isotipo-carga--guardando img:first-child { filter: brightness(0); opacity: 0.2; }
+@keyframes guardandoEntra {
+  from { opacity: 0; transform: translateY(-4px); }
+  to { opacity: 1; transform: none; }
+}
+
+/* ── Teléfono y tablet: teclado, zoom y toques (Tickets TIC, "iPhone y iPad") ──
+   Variables del teclado: src/utils/tecladoMovil.js (--vv-alto, --vv-arriba,
+   --vv-abajo y html[data-teclado]). */
+
+/* Sin zoom al escribir: Safari agranda la página al tocar un campo con letra menor a
+   16 px y la deja agrandada. En táctil y en cualquier iPhone/iPad los campos van a 16 px;
+   un campo nuevo no necesita nada. El texto no se infla al girar. */
+html { -webkit-text-size-adjust: 100%; text-size-adjust: 100%; }
+@media (pointer: coarse) {
+  input:not([type=checkbox]):not([type=radio]):not([type=range]), textarea, select { font-size: 16px !important; }
+}
+@supports (-webkit-touch-callout: none) {
+  input:not([type=checkbox]):not([type=radio]):not([type=range]), textarea, select { font-size: 16px !important; }
+}
+
+/* La página no se corre hacia los lados (clip no rompe los sticky; hidden de respaldo),
+   sin rebote lateral, y el doble toque no agranda (el pellizco sí). */
+html { overflow-x: hidden; overscroll-behavior-x: none; touch-action: manipulation; }
+@supports (overflow: clip) { html { overflow-x: clip; } }
+
+/* Lo fijo abajo sube sobre el teclado del iPhone (en Android --vv-abajo es 0). */
+[data-barra-inferior] { bottom: var(--vv-abajo, 0px) !important; }
+@media not all and (min-width: 640px) and (hover: hover) and (pointer: fine) {
+  html[data-teclado] [data-toaster]:not([data-sobre-barra]) { bottom: calc(16px + var(--vv-abajo, 0px)); }
+}
+/* Capas a pantalla completa con campos (buscador del selector, diálogos, ficha del
+   equipo): con el teclado abierto ocupan solo lo visible, nunca debajo del teclado. */
+html[data-teclado] [data-sobre-teclado] {
+  top: var(--vv-arriba, 0px) !important;
+  bottom: auto !important;
+  height: var(--vv-alto, 100%) !important;
+}
+
+@media (hover: none) and (pointer: coarse) {
+  /* Nada de globos de mouse: con el dedo quedaban pegados. */
+  [role="tooltip"] { display: none !important; }
+  /* Área de toque de al menos 40 px en botones chicos, sin cambiar su dibujo: un
+     seudoelemento invisible 10 px más grande por lado (una fila de texto de 20 px
+     llega a 40). Los botones posicionados por su cuenta (absolute, fixed, sticky) o
+     que ya usan ::before quedan como están. */
+  /* :where() deja la regla sin peso: cualquier clase que posicione el botón gana. */
+  button:where(:not(.absolute):not(.fixed):not(.sticky):not([class*="before:"])) { position: relative; }
+  button:not([class*="before:"])::before { content: ""; position: absolute; inset: -10px; }
+  /* Enlaces con ícono y los botones "volver" (enlaces inline-flex de 36 px). */
+  a:where([href][aria-label], [href].inline-flex):where(:not(.absolute):not(.fixed)) { position: relative; }
+  a[href][aria-label]::before, a[href].inline-flex::before { content: ""; position: absolute; inset: -10px; }
+  /* Buscadores con tecla "Buscar" (type=search) sin la X del navegador. */
+  input[type=search] { -webkit-appearance: none; appearance: none; }
+  input[type=search]::-webkit-search-decoration,
+  input[type=search]::-webkit-search-cancel-button { -webkit-appearance: none; display: none; }
+}
+
+/* ── Modo oscuro: excepciones ─────────────────────────────────────────────
+   Las hojas de las actas siguen el tema (el PDF no: tiene sus propios colores).
+   El logo verde se aclara en oscuro.
+   Firmas: la tinta es negra (el PNG guardado y el PDF). En oscuro se ve BLANCA con un
+   filtro solo de pantalla ([data-firma-tinta]: trazo del lienzo e imagen) y el recuadro
+   ([data-firma-recuadro]) queda más oscuro que la tarjeta, con filete visible. */
+@media (prefers-color-scheme: dark) {
+  :root:not([data-tema="claro"]) img[src*="logo-legumex"] { filter: brightness(0) invert(0.9); }
+}
+:root[data-tema="oscuro"] img[src*="logo-legumex"] { filter: brightness(0) invert(0.9); }
+@media (prefers-color-scheme: dark) {
+  :root:not([data-tema="claro"]) [data-firma-tinta] { filter: invert(1); }
+  :root:not([data-tema="claro"]) [data-firma-recuadro] { background-color: rgb(var(--c-background)); border-color: rgb(var(--c-outline)); }
+}
+:root[data-tema="oscuro"] [data-firma-tinta] { filter: invert(1); }
+:root[data-tema="oscuro"] [data-firma-recuadro] { background-color: rgb(var(--c-background)); border-color: rgb(var(--c-outline)); }
+
+/* ── Cielo según la hora (Tickets TIC, "Cielo según la hora" y "Sistema vivo") ──
+   La hora de Guatemala (<html data-fase>, src/config/cielo.js) decide QUÉ hay en el
+   cielo; el tema solo cambia la paleta. Sin data-fase (sin JS) queda el día. */
+:root {
+  --cielo-app: #b4d3ea;          /* tinte del fondo (celeste de día) */
+  --sol-1: #fff4c7;
+  --sol-2: #f8cd5c;
+  --sol-rayo: #f3c14e;
+  --sol-halo: 248 205 92;
+  --sol-tinte: 0.16;             /* brillo cálido arriba a la derecha */
+  --luna: #fbf8ec;
+  --nube: #ffffff;
+  --mota: 246 196 82;
+  --fugaz: #ffffff;
+  --aves: 11 42 30;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-tema="claro"]) {
+    --cielo-app: #132530; --sol-1: #f4e2a8; --sol-2: #d8a93e; --sol-rayo: #c99b3b; --sol-halo: 216 169 62;
+    --sol-tinte: 0.07; --luna: #f1edd8; --nube: #223033; --mota: 214 170 80; --fugaz: #f4f1e2; --aves: 214 236 222;
+  }
+}
+:root[data-tema="oscuro"] {
+  --cielo-app: #132530; --sol-1: #f4e2a8; --sol-2: #d8a93e; --sol-rayo: #c99b3b; --sol-halo: 216 169 62;
+  --sol-tinte: 0.07; --luna: #f1edd8; --nube: #223033; --mota: 214 170 80; --fugaz: #f4f1e2; --aves: 214 236 222;
+}
+/* Fases en claro: rosado al amanecer, cálido al atardecer, lila de noche. */
+@media (prefers-color-scheme: light) {
+  :root[data-fase="amanecer"]:not([data-tema="oscuro"]) { --cielo-app: #ead8e4; --sol-1: #fff0d8; --sol-2: #f6ad62; --sol-rayo: #f2a05a; --sol-halo: 246 173 98; --mota: 246 170 110; --nube: #f1dde2; }
+  :root[data-fase="atardecer"]:not([data-tema="oscuro"]) { --cielo-app: #f1cfb0; --sol-1: #ffd6a0; --sol-2: #ee7d3a; --sol-rayo: #e87332; --sol-halo: 238 125 58; --mota: 240 140 70; --nube: #f4d8c2; }
+  :root[data-fase="noche"]:not([data-tema="oscuro"]) { --cielo-app: #a9b2d2; --nube: #dfe3f1; --sol-tinte: 0; }
+}
+:root[data-fase="amanecer"][data-tema="claro"] { --cielo-app: #ead8e4; --sol-1: #fff0d8; --sol-2: #f6ad62; --sol-rayo: #f2a05a; --sol-halo: 246 173 98; --mota: 246 170 110; --nube: #f1dde2; }
+:root[data-fase="atardecer"][data-tema="claro"] { --cielo-app: #f1cfb0; --sol-1: #ffd6a0; --sol-2: #ee7d3a; --sol-rayo: #e87332; --sol-halo: 238 125 58; --mota: 240 140 70; --nube: #f4d8c2; }
+:root[data-fase="noche"][data-tema="claro"] { --cielo-app: #a9b2d2; --nube: #dfe3f1; --sol-tinte: 0; }
+/* Fases en oscuro. */
+@media (prefers-color-scheme: dark) {
+  :root[data-fase="amanecer"]:not([data-tema="claro"]) { --cielo-app: #17131a; --sol-1: #f6d2ae; --sol-2: #d8793f; --sol-rayo: #c96f3a; --sol-halo: 216 121 63; --mota: 216 140 90; }
+  :root[data-fase="atardecer"]:not([data-tema="claro"]) { --cielo-app: #1a1310; --sol-1: #f6b37c; --sol-2: #e0703a; --sol-rayo: #cf6a35; --sol-halo: 224 112 58; --mota: 224 120 60; }
+  :root[data-fase="noche"]:not([data-tema="claro"]) { --cielo-app: #0b1410; --sol-tinte: 0; }
+}
+:root[data-fase="amanecer"][data-tema="oscuro"] { --cielo-app: #17131a; --sol-1: #f6d2ae; --sol-2: #d8793f; --sol-rayo: #c96f3a; --sol-halo: 216 121 63; --mota: 216 140 90; }
+:root[data-fase="atardecer"][data-tema="oscuro"] { --cielo-app: #1a1310; --sol-1: #f6b37c; --sol-2: #e0703a; --sol-rayo: #cf6a35; --sol-halo: 224 112 58; --mota: 224 120 60; }
+:root[data-fase="noche"][data-tema="oscuro"] { --cielo-app: #0b1410; --sol-tinte: 0; }
+
+/* Tinte del cielo de la hora sobre el fondo, con un brillo cálido donde está el sol. */
+body {
+  background-image:
+    radial-gradient(ellipse 60% 38vh at 88% 0, rgb(var(--sol-halo) / var(--sol-tinte)), transparent 70%),
+    linear-gradient(180deg, color-mix(in srgb, var(--cielo-app) 74%, rgb(var(--c-background))) 0, rgb(var(--c-background)) 66vh);
+  background-attachment: fixed;
+}
+
+/* Escena del sistema (src/components/CieloSistema.jsx). */
+.cielo-sistema { position: fixed; inset: 0; z-index: 0; pointer-events: none; overflow: hidden; }
+.cielo-estrellas {
+  display: none; position: absolute; left: 0; right: 0; top: 0; height: 60vh; opacity: 0.7;
+  -webkit-mask-image: linear-gradient(#000 35%, transparent); mask-image: linear-gradient(#000 35%, transparent);
+}
+.cielo-estrellas::before, .cielo-estrellas::after { content: ""; position: absolute; inset: 0; animation: cieloTitila 5s ease-in-out infinite alternate; }
+.cielo-estrellas::before {
+  background-image: radial-gradient(1.3px 1.3px at 11% 17%, #fff 60%, transparent), radial-gradient(1px 1px at 67% 41%, #fff 60%, transparent), radial-gradient(1.6px 1.6px at 38% 73%, #fff 60%, transparent), radial-gradient(1px 1px at 86% 12%, #fff 60%, transparent), radial-gradient(1.2px 1.2px at 23% 88%, #fff 60%, transparent), radial-gradient(1px 1px at 57% 5%, #fff 60%, transparent), radial-gradient(1.4px 1.4px at 93% 63%, #fff 60%, transparent), radial-gradient(1px 1px at 3% 46%, #fff 60%, transparent);
+  background-size: 317px 251px;
+}
+.cielo-estrellas::after {
+  background-image: radial-gradient(1px 1px at 52% 22%, #fff 60%, transparent), radial-gradient(1.5px 1.5px at 7% 58%, #fff 60%, transparent), radial-gradient(1.1px 1.1px at 79% 77%, #fff 60%, transparent), radial-gradient(1px 1px at 33% 39%, #fff 60%, transparent), radial-gradient(1.3px 1.3px at 64% 93%, #fff 60%, transparent), radial-gradient(1px 1px at 18% 8%, #fff 60%, transparent), radial-gradient(1.2px 1.2px at 97% 31%, #fff 60%, transparent);
+  background-size: 433px 307px; animation-delay: -2.5s; animation-duration: 7s;
+}
+@keyframes cieloTitila { from { opacity: 0.35; } to { opacity: 1; } }
+.cielo-fugaz { display: none; position: absolute; left: 30%; top: 4vh; width: 0; height: 0; transform: rotate(24deg); }
+.cielo-fugaz::before {
+  content: ""; position: absolute; left: 0; top: 0; width: 160px; height: 2px; border-radius: 2px; opacity: 0;
+  background: linear-gradient(90deg, rgba(255, 255, 255, 0), var(--fugaz));
+  animation: cieloFugaz 300s cubic-bezier(0.3, 0, 0.7, 1) 6s infinite;
+}
+@keyframes cieloFugaz { 0% { opacity: 0; transform: translateX(0) scaleX(0.3); } 0.15% { opacity: 1; transform: translateX(12vw) scaleX(1); } 0.6% { opacity: 0; transform: translateX(52vw) scaleX(0.6); } 100% { opacity: 0; transform: translateX(52vw); } }
+.cielo-motas {
+  position: absolute; left: 0; right: 0; top: 0; height: 62vh; opacity: 0.55;
+  -webkit-mask-image: linear-gradient(#000 40%, transparent); mask-image: linear-gradient(#000 40%, transparent);
+}
+.cielo-motas::before, .cielo-motas::after {
+  content: ""; position: absolute; inset: 0; filter: drop-shadow(0 0 3px rgb(var(--mota) / 0.9)); animation: cieloMotas 14s ease-in-out infinite;
+  background-image: radial-gradient(4.5px 4.5px at 14% 22%, rgb(var(--mota)), transparent), radial-gradient(3.5px 3.5px at 31% 64%, rgb(var(--mota)), transparent), radial-gradient(5px 5px at 58% 16%, rgb(var(--mota)), transparent), radial-gradient(3.5px 3.5px at 73% 48%, rgb(var(--mota)), transparent), radial-gradient(4.5px 4.5px at 88% 30%, rgb(var(--mota)), transparent), radial-gradient(4px 4px at 44% 38%, rgb(var(--mota)), transparent);
+}
+.cielo-motas::after {
+  background-image: radial-gradient(4px 4px at 22% 40%, rgb(var(--mota)), transparent), radial-gradient(3.5px 3.5px at 49% 70%, rgb(var(--mota)), transparent), radial-gradient(4.5px 4.5px at 66% 28%, rgb(var(--mota)), transparent), radial-gradient(3.5px 3.5px at 81% 66%, rgb(var(--mota)), transparent), radial-gradient(4.5px 4.5px at 37% 12%, rgb(var(--mota)), transparent);
+  animation-duration: 19s; animation-delay: -7s;
+}
+@keyframes cieloMotas { 0% { transform: translateY(12px); opacity: 0.15; } 50% { opacity: 1; } 100% { transform: translateY(-28px); opacity: 0.15; } }
+.cielo-astro { position: absolute; right: max(3%, 20px); top: 10px; width: 80px; aspect-ratio: 1; animation: cieloRespira 9s ease-in-out infinite; }
+.cielo-astro svg { position: absolute; inset: 0; width: 100%; height: 100%; overflow: visible; }
+.cielo-rayos { stroke: var(--sol-rayo); stroke-width: 1.8; stroke-linecap: round; opacity: 0.7; transform-origin: 50px 50px; animation: cieloGira 90s linear infinite; }
+@keyframes cieloGira { to { transform: rotate(360deg); } }
+@keyframes cieloRespira { 0%, 100% { transform: scale(1); } 50% { transform: scale(1.04); } }
+.cielo-luna { display: none; }
+.cielo-nubes { position: absolute; inset: 0; }
+.cielo-nubes svg { position: absolute; fill: var(--nube); opacity: 0.9; animation: cieloNube linear infinite; }
+.cielo-nubes .cielo-nube-lejos { opacity: 0.5; }
+@keyframes cieloNube { from { transform: translateX(-160px); } to { transform: translateX(calc(100vw + 40px)); } }
+.cielo-aves { position: absolute; left: 0; top: 21vh; width: 120px; height: 44px; opacity: 0; animation: cieloAves 170s linear 24s infinite; }
+.cielo-aves path { fill: none; stroke: rgb(var(--aves) / 0.55); stroke-width: 1.6; stroke-linecap: round; stroke-linejoin: round; transform-box: fill-box; transform-origin: center; animation: cieloAleteo 700ms ease-in-out infinite alternate; }
+.cielo-aves path:nth-child(2) { animation-delay: -250ms; } .cielo-aves path:nth-child(3) { animation-delay: -480ms; } .cielo-aves path:nth-child(4) { animation-delay: -120ms; }
+@keyframes cieloAves { 0% { opacity: 0; transform: translate(-140px, 24px); } 0.4% { opacity: 1; } 5.6% { opacity: 1; } 6% { opacity: 0; transform: translate(calc(100vw + 20px), -40px); } 100% { opacity: 0; transform: translate(calc(100vw + 20px), -40px); } }
+@keyframes cieloAleteo { from { transform: scaleY(1); } to { transform: scaleY(0.35); } }
+/* De noche: luna, estrellas y fugaz; sin sol, nubes, motas ni aves. Al amanecer y al
+   atardecer quedan las últimas (o primeras) estrellas, tenues. */
+:root[data-fase="noche"] .cielo-sol, :root[data-fase="noche"] .cielo-nubes,
+:root[data-fase="noche"] .cielo-motas, :root[data-fase="noche"] .cielo-aves { display: none; }
+:root[data-fase="noche"] .cielo-luna, :root[data-fase="noche"] .cielo-estrellas,
+:root[data-fase="noche"] .cielo-fugaz { display: block; }
+:root[data-fase="amanecer"] .cielo-estrellas, :root[data-fase="atardecer"] .cielo-estrellas { display: block; opacity: 0.28; }
+/* En claro de noche el cielo es lila: las estrellas y la luna llevan un poco de sombra. */
+/* Teléfono y tablet: el astro va a la esquina, bajo la barra superior. */
+@media not all and (min-width: 768px) and (hover: hover) and (pointer: fine) {
+  .cielo-astro { width: 52px; top: calc(3.5rem + 10px); right: 10px; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .cielo-sistema *, .cielo-sistema *::before, .cielo-sistema *::after { animation: none !important; }
+  .cielo-aves, .cielo-fugaz { display: none !important; }
+}
+@media print { .cielo-sistema { display: none; } body { background-image: none; } }
+
+/* Cielo del cajón del menú (Sidebar, teléfono y tablet). Va detrás del contenido del
+   cajón (z-index -1 dentro de su propio apilamiento, `isolate`). */
+.cajon-cielo { position: absolute; inset: 0; z-index: -1; pointer-events: none; overflow: hidden; min-height: 100%;
+  background: linear-gradient(180deg, color-mix(in srgb, var(--cielo-app) 74%, rgb(var(--c-background))) 0, rgb(var(--c-background)) 260px); }
+.cajon-astro { position: absolute; top: 26px; right: 76px; width: 26px; height: 26px; border-radius: 9999px;
+  background: radial-gradient(circle at 40% 38%, var(--sol-1), var(--sol-2));
+  box-shadow: 0 0 0 6px rgb(var(--sol-halo) / 0.14), 0 0 22px 6px rgb(var(--sol-halo) / 0.28); }
+:root[data-fase="noche"] .cajon-astro { background: transparent; box-shadow: inset -7px 4px 0 0 var(--luna), 0 0 18px 2px rgb(255 255 255 / 0.12); transform: rotate(-12deg); }
+.cajon-sierra { position: absolute; left: 0; right: 0; bottom: 0; width: 100%; height: 260px; fill: rgb(var(--c-bosque)); }
+
+/* En oscuro el destello de la cordillera (SierraFondo) se aclara mucho sobre la montaña
+   oscura: se atenúa. */
+@media (prefers-color-scheme: dark) { :root:not([data-tema="claro"]) .sierra-brillo { opacity: 0.18; } }
+:root[data-tema="oscuro"] .sierra-brillo { opacity: 0.18; }
+
+/* ── Login según la hora ────────────────────────────────────────────────────
+   El login conserva su escena (telón, parallax, sol grande, neblina, sierra) y suma
+   el cielo de la hora (CieloSistema dentro de .lg-cielo-hora). El login se ve siempre
+   en claro (como el papel): la fase decide el cielo. */
+.lg-cielo-hora .cielo-sistema { position: fixed; z-index: 0; }
+/* de día el astro es el sol grande del login; el del sistema no se repite */
+.lg-cielo-hora .cielo-astro { display: none; }
+.lg-cielo { background: linear-gradient(180deg, var(--lg-cielo-alto, transparent), transparent 72%); }
+:root[data-fase="amanecer"] .lg-raiz { --lg-cielo-alto: #ead8e4; }
+:root[data-fase="atardecer"] .lg-raiz { --lg-cielo-alto: #f1cfb0; }
+:root[data-fase="noche"] .lg-raiz { --lg-cielo-alto: #a9b2d2; }
+/* amanecer y atardecer: el sol grande, cálido y bajo detrás de las montañas */
+:root[data-fase="amanecer"] .lg-sol, :root[data-fase="atardecer"] .lg-sol {
+  background: radial-gradient(circle at 50% 50%, #fff0d8 0%, #f6ad62 42%, rgba(246, 173, 98, 0) 70%);
+}
+:root[data-fase="atardecer"] .lg-sol { background: radial-gradient(circle at 50% 50%, #ffd6a0 0%, #ee7d3a 42%, rgba(238, 125, 58, 0) 70%); }
+:root[data-fase="amanecer"] .lg-sol { right: 40%; }
+/* de noche: sin sol; luna grande en su lugar, estrellas y fugaz; nubes lilas */
+:root[data-fase="noche"] .lg-sol { display: none; }
+:root[data-fase="noche"] .lg-cielo-hora .cielo-astro {
+  display: block; top: auto; right: 44%; bottom: calc(clamp(140px, 30vh, 280px) + 40px); width: clamp(90px, 9vw, 130px);
+}
+:root[data-fase="noche"] .lg-nubes { opacity: 0.45; }
+:root[data-fase="noche"] .lg-cielo-hora .cielo-estrellas { opacity: 0.95; }
+@media not all and (min-width: 768px) and (hover: hover) and (pointer: fine) {
+  :root[data-fase="noche"] .lg-cielo-hora .cielo-astro { right: 8%; top: 5vh; bottom: auto; width: 72px; }
+}
+/* el login siempre en claro: la paleta clara del cielo aunque el tema sea oscuro */
+.lg-raiz { --cielo-app: #b4d3ea; --nube: #ffffff; --mota: 246 196 82; --aves: 11 42 30; --luna: #fbf8ec; --fugaz: #ffffff; }

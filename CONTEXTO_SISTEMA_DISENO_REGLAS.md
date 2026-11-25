@@ -1,0 +1,988 @@
+# LEGUMEX — Qué es el sistema, cómo está diseñado, y reglas de trabajo
+
+> Este archivo es el punto de partida para cualquier agente de IA (o persona) que retome
+> este proyecto sin haber estado en las sesiones anteriores. Describe cómo está el sistema
+> HOY y las reglas de trabajo que se han pedido explícitamente. Actualizado al 2026-09-29.
+>
+> Documentos del repositorio y para qué sirve cada uno:
+> - `README.md`: presentación corta, cómo levantarlo y **pendientes / mejoras sugeridas**
+>   (frontend y backend) más las decisiones tomadas que no son errores.
+> - `CONTEXTO_SISTEMA_DISENO_REGLAS.md` (este): sistema, diseño, decisiones y reglas.
+> - `CLAUDE.md`: resumen operativo para Claude Code (comandos, entorno, arquitectura).
+> - `GUIA_DESPLIEGUE_UBUNTU.md`: checklist de servidor para que las firmas se vean en
+>   producción.
+> - `paginacion.md`: copia del contrato de paginación y filtros del backend (idéntica a la
+>   del repositorio del backend al 2026-09-27).
+>
+> (`LEEME.md`, `AUDITORIA_VISUAL_UX.md`, `PLAN_PENDIENTE_PROXIMA_SESION.md` y
+> `RESUMEN_IMPLEMENTADO.md` se unificaron aquí y se borraron el 2026-09-08.)
+>
+> Después de "Diseño visual" vienen las secciones con fecha (aproximadamente de la más
+> nueva a la más vieja):
+> 2026-09-29 (sistema vivo: cielo según la hora, modo oscuro, recorrido guiado, teclado
+> y toque en teléfono/tablet, clases de botón),
+> 2026-09-27 (actas con el estilo del sistema; nueva entrega seguida, filtro por
+> departamento, historial del colaborador),
+> 2026-09-26 (borrador, aviso de sesión, "Ver acta", volver por origen; destello y viento),
+> 2026-09-25 (historial por departamento, filtros, CSV; tablet; PDF), 2026-09-14
+> (paginación) y las de limpieza del 2026-09-08 / 09-11.
+
+## Qué es
+
+Sistema interno **a medida** de Agroindustria Legumex, S.A. (no es un producto para
+vender) para digitalizar las hojas de control del Departamento de TIC (entrega y
+devolución de equipo, responsabilidad, desecho, teléfonos) y llevar un catálogo de datos
+maestros (empleados, equipos, marcas, departamentos). Antes esas hojas se llenaban en
+papel; ahora se llenan en pantalla y, para los formatos activos, quedan guardadas en el
+backend con historial consultable por colaborador, por departamento y por equipo.
+
+Uso real: corre en un **servidor de la red local** (no está en internet). Lo usa TIC
+(rol `admin`) para registrar actas e inventario, y jefaturas y RRHH (rol `user`) para
+consultar y descargar actas, sobre todo desde **tablets**. El volumen normal es bajo (2 o
+3 actas por semana, más en renovaciones de equipo); la carga inicial del inventario fue
+el único periodo de mucho registro seguido.
+
+## Stack técnico
+
+- **Frontend** (este repositorio, `Roberto-Santizo/leguemxapps_tic_formatos_frontend`):
+  React 18 + Vite + React Router v7 + Tailwind CSS 3. Librerías puntuales: `lucide-react` (íconos), `jspdf` + `html2canvas`
+  (exportar actas a PDF), `react-signature-canvas` (captura de firma).
+- **Backend**: Laravel, API REST bajo el prefijo de `AUTH_API_URL` (`VITE_AUTH_API_URL` en
+  `.env`), con autenticación JWT (`jwt.auth`) y respuesta siempre en el sobre
+  `{ statusCode, message, data }` (con `.errors` en validaciones 422). Repositorio
+  `Roberto-Santizo/legumexapps_tic_formatos_backend` (lo administra Roberto Santizo; trae
+  `flujo.md`, `reglas.md` y Swagger en `/api/documentation`). Este frontend solo lo
+  consume; no se inventan endpoints ni comportamientos del backend, si no está documentado
+  o confirmado se pregunta antes de asumir. JWT de `tymon/jwt-auth`, 60 min (`JWT_TTL`),
+  sin ruta de renovación. Firmas en el disco `signatures` (S3 por defecto,
+  `SIGNATURES_DISK`).
+- **Despliegue**: imagen Docker (build con node:20, servida por nginx:1.27) publicada a
+  Docker Hub por GitHub Actions en cada push a `main`. Detalle en `CLAUDE.md`.
+
+## Estado de los 5 formatos físicos (importante, cambió)
+
+Los cinco formatos están definidos en `src/config/formatos.js` (objeto `FORMATOS`), pero
+**hoy solo 2 están activos y visibles** en las pantallas de "Nueva Acta" e "Historial de
+Actas": **Entrega de Equipo** y **Devolución de Equipo**. Esto lo controla el array
+`ORDEN_FORMATOS` (`['entrega', 'devolucion']`) del mismo archivo -- es la única fuente de
+verdad para qué tarjetas se muestran en ambas pantallas (`NuevaActa.jsx` y
+`Historial.jsx` simplemente mapean sobre `LISTA_FORMATOS`, que se deriva de
+`ORDEN_FORMATOS`).
+
+Los otros tres (`responsabilidad`, `desecho`, `telefonos`) siguen definidos
+dentro de `FORMATOS` -- por si algún registro histórico del backend todavía los
+referencia -- pero **no aparecen en ninguna pantalla**. En particular, "Entrega de
+Teléfonos" se quitó explícitamente de Nueva Acta e Historial porque su botón "Finalizar
+Entrega" no está conectado a ningún endpoint del backend (el formulario se llenaba y se
+perdía sin aviso). Si en el futuro se conecta un backend real para alguno de estos tres,
+el cambio es agregarlo de nuevo a `ORDEN_FORMATOS` -- no hace falta tocar componentes.
+
+"Préstamo de Equipo" **se eliminó** de `FORMATOS` (2026-09-25): ese formato nunca existió
+en la operación; solo estaba definido en la configuración y se abría por URL
+(`/historial/prestamo`, `/actas/prestamo/nueva`). Hoy esas URLs muestran "formato no
+encontrado" como cualquier otro id desconocido.
+
+De los 2 activos:
+- **Entrega de Equipo**: conectado a backend real (`listarDocumentosEntrega`,
+  `eliminarDocumentoEntrega`, etc. en `src/services/api.js`), con historial completo
+  (listar, ver, eliminar) en `HistorialEntregaList.jsx` / `HistorialEntregaView.jsx`.
+- **Devolución de Equipo**: también conectado a backend real, pero con un flujo distinto --
+  una devolución no se llena desde una hoja en blanco, siempre nace de una entrega ya
+  existente. Por eso su tarjeta en "Nueva Acta" no lleva a `/actas/devolucion/nueva` como
+  las demás, lleva a `/historial/devolucion/nueva` (`BuscarDevolucion.jsx`), donde primero
+  se busca al responsable/la entrega correspondiente y luego se abre la hoja ya con los
+  datos completos (`RegistrarDevolucion.jsx`). Su historial (`HistorialDevolucionList.jsx`)
+  permite buscar y ver, pero no eliminar.
+
+## Roles y permisos
+
+- **`admin`** (TIC): todo -- registrar y corregir actas, catálogo (marcas, departamentos,
+  equipos, empleados), usuarios.
+- **`user`** (jefaturas / RRHH): **solo Historial**. Puede ver y buscar actas, descargar
+  el PDF, corregir la fecha de entrega/devolución y la Emisión/Vigencia del encabezado
+  (correcciones locales, ver sección 2026-09-26) y nada más. Las rutas de admin van
+  envueltas en `RequireAdmin` (redirige a `/historial`); los botones de admin no se
+  pintan (`isAdmin`); los textos de Historial le hablan en lectura ("Buscar · Ver · PDF").
+- En el backend solo crear/editar/borrar **actas** exige `admin`; detalles de acta,
+  equipos y empleados solo piden sesión (anotado en `README.md` como pendiente del
+  backend; riesgo bajo en red local).
+
+## Motor único de formularios
+
+Los cinco formatos físicos comparten la misma gramática (membrete, datos del usuario, tabla
+de equipo, cláusula fija, observaciones, firmas), así que **no existe una página por
+formato**: existe `FormatoActa.jsx`, que lee la configuración de `src/config/formatos.js`
+según el `id` de la URL y arma el formulario dinámicamente. Agregar un formato nuevo, o
+reactivar uno de los tres inactivos, es agregar/editar una entrada en `formatos.js` --
+nunca escribir un componente de página nuevo para eso.
+
+## Diseño visual
+
+- **Sistema visual "Sierra"** (2026-09-24; referencia: mockup "Mesa TIC —
+  Propuesta sierra"). **Claro y oscuro** desde el 2026-09-29 (antes solo claro; ver
+  "Sistema vivo"): los valores de abajo son los del tema claro. Se conservaron los nombres de token Material 3
+  (`primary`, `surface`, `on-surface-variant`, `outline`, etc.) y cambiaron sus valores, así
+  que el rediseño llegó a todo el sistema sin reescribir cada className:
+  - **Papel** `#f4f5f1` de fondo (`background` = `papel`); superficies **blancas** encima;
+    paneles de solo lectura / activos suaves `#ebede7` (`surface-container-high`); gris de
+    tabla/pie `#f5f5f5` (`surface-container`).
+  - **Tinta**: títulos `#171717` (`on-surface`), secundario `#525252` / `#6b6b6b`
+    (`on-surface-variant` / `on-surface-subtle`), bordes `#e5e5e5` (`outline-variant`),
+    filete `#a3a3a3` (`outline`). CTA negro `bg-tinta` (`#0a0a0a`, hover `tinta-hover`).
+    - Contraste: `on-surface-subtle` (#6b6b6b desde el 2026-09-29; antes #737373, que no
+      llegaba a AA fuera del blanco) pasa AA sobre blanco, `surface-container-low`, papel,
+      `surface-container` y `surface-container-high` (5.33 / 5.11 / 4.87 / 4.89 / 4.52:1).
+      Para texto chico sobre fondos tintados se prefiere `on-surface-variant` (#525252, 7.4:1).
+      `outline` (#a3a3a3, 2.5:1) nunca va en texto: solo filetes y chevrons decorativos.
+  - **Foco y enlaces**: azul `foco` (`#2563eb`).
+  - **Verde de marca** (`bosque #0b2a1e`, `brote`, `linea`, `exito`): SOLO en marca, login y
+    cordillera de fondo, y (desde el 2026-09-29) el cielo de la hora detrás de todo. En
+    la app no hay verde en superficies ni textos. El login no usa
+    las clases: repite esos valores como variables `--lg-bosque`, `--lg-acento`,
+    `--lg-linea` y `--lg-exito` en `index.css` (bloque `.lg-raiz`); si cambia uno, cambiar
+    ambos.
+  - **Rojo** (`error*`): eliminar, errores y marcar un equipo como **extravío** en la
+    devolución (fila, badge y botón en rojo -- pedido explícito del cliente).
+  - **Verde salvia y ocre** (`available*` / `assigned*`): el badge "Disponible" / "En
+    posesión" de Catálogo → Equipos y, desde la ronda 2 del rediseño, el **punto** de color
+    del chip de estado de Historial → Devolución (`devuelto` = `bg-available`, `parcial` =
+    `bg-assigned`, otro = `bg-outline`; `HistorialDevolucionList.jsx`, `puntoEstado`), el
+    del chip "N pendientes" de Registrar devolución (`BuscarDevolucion.jsx`, `bg-assigned`:
+    pendiente de devolver = parcial) y el del chip "Corregida aquí" de `EditorFechaLocal`
+    (`bg-assigned`: aviso de que esa fecha es un ajuste local, no el dato del servidor). El
+    chip siempre es neutro (blanco, borde `outline-variant`, texto `on-surface`/`-variant`):
+    solo el punto lleva color. En ningún otro lugar. Apagados, al mismo nivel de saturación
+    que el rojo.
+  - Nada se escribe suelto (`bg-green-100`, hex o `rgba(...)` en JSX): colores, radios
+    (`rounded-boton` 8px, `rounded-tarjeta` 16px, `rounded-menu` 10px, `rounded-aviso` 22px,
+    `rounded-casilla` 4px del checkbox),
+    sombras (`shadow-tarjeta` = sombra corta + filete de 1px en vez de `border`;
+    `shadow-tarjeta-hover`, `shadow-tarjeta-foco`, `shadow-flotante`, `shadow-cajon`,
+    `shadow-barra-inferior`) y tiempos (`duration-fast|base|page`, `ease-standard|salida|rebote`)
+    están en `tailwind.config.js`. Si hace falta uno nuevo, se registra ahí.
+- **Tipografía**: Inter (400–800) para todo y **JetBrains Mono** (`font-mono` / `font-eyebrow`)
+  para eyebrows, códigos, series, contadores y encabezados de tabla (mayúsculas, tracking
+  .1–.12em). Manrope queda cargada (`index.html`, 700/800) SOLO para el título del papel
+  aprobado (ver abajo). Tamaños siempre por token, nunca `text-[Npx]`:
+  - `text-display-lg` (32/800/−0.04em): título de pantalla en escritorio; en móvil
+    `text-titulo-movil` (26px/30px/800/−0.04em) → `text-titulo-movil md:text-display-lg`.
+  - `text-headline-lg` (24/700), `text-headline-md` (18/700, título de sección/tarjeta),
+    `text-body-lg` (16), `text-body-md` (14).
+  - `text-meta` (12px/16px): labels de formulario (`text-meta font-semibold`), metadatos y
+    códigos en tabla (`font-mono text-meta`).
+  - `text-micro` (11px/14px): etiquetas mono de tabla, paginador y chips; el tracking va
+    aparte: `font-mono text-micro uppercase tracking-[0.1em]`.
+  - `text-eyebrow` (11px, .12em) y `text-input-movil` (16px, inputs en móvil: evita el zoom
+    de iOS al enfocar).
+  - `text-nano` (10px/16px, mono: marca del menú, pie, chip "Corregida aquí") y
+    `text-titulo-modal` (20/28/600/−0.02em: título de `ConfirmDialog` y
+    `EquipoDetalleModal`).
+  - **Membrete del papel** (hoja de entrega/devolución en pantalla): su título usa
+    `font-papel text-titulo-papel` (Manrope 24/32/800/−0.02em). El membrete (logo,
+    título, código, emisión/vigencia) conserva su estilo de documento porque representa
+    el papel físico. El resto de la hoja se unificó con el sistema el 2026-09-27 (ver
+    "Actas con el estilo del sistema").
+  - Cada pantalla abre con **eyebrow de migas** (filete de 28px + ruta en mayúsculas) sobre
+    el `h1`: `SECCIÓN / SUBSECCIÓN[ / ACCIÓN]`. Primer nivel: `ACTAS / NUEVA`, `HISTORIAL`,
+    `CATÁLOGO`, `USUARIOS`; subpantallas p. ej. `CATÁLOGO / MARCAS / DETALLE`,
+    `CATÁLOGO / DEPARTAMENTOS / <nombre>`; vistas de detalle `… / DETALLE` (`HISTORIAL / ENTREGA /
+    DETALLE`), hoja nueva `ACTAS / NUEVA / ENTREGA`, registrar `HISTORIAL / DEVOLUCIÓN /
+    REGISTRAR`. Las migas no repiten texto crudo de la URL. `EnConstruccion` recibe la ruta
+    en la prop de texto `migas` (sin `migas` no pinta eyebrow). Nada de "LEGUMEX / X".
+- **Recetas repetidas a propósito** (sin `<Button>` genérico; al crear una pantalla nueva,
+  copiar las clases de la más parecida):
+  - Botón primario negro `h-10 rounded-boton bg-tinta text-white hover:bg-tinta-hover`;
+    secundario blanco con `border-outline-variant`; peligro = secundario con `text-error`.
+    Botones de cabecera con `whitespace-nowrap shrink-0`.
+  - Botón volver `h-9` con flecha; separación volver → eyebrow `mt-6` (móvil `mt-5`).
+  - **Botón ícono de tabla** (ver/editar/eliminar; se conservan los íconos, no el botón
+    "Editar" con texto del mockup): `h-9 w-9 inline-flex items-center justify-center
+    rounded-boton text-on-surface-variant hover:bg-surface-container hover:text-on-surface
+    active:scale-[0.90] transition`; eliminar con `hover:bg-error-container/60
+    hover:text-error`. Columna de acciones alineada a la derecha y de ancho fijo.
+  - Tarjeta `bg-white rounded-tarjeta shadow-tarjeta` (sin `border` extra). Tabla con
+    `thead` gris (`bg-surface-container`), `th` mono `text-micro`, filas de 72px y el pie
+    gris con el `Paginador` dentro (ver Paginación). Chip de estado con punto.
+  - **Hover de fila**: `hover:bg-surface-container` en las 6 tablas (uno solo en todo el
+    sistema).
+  - **Columna de acciones fija** (solo Equipos, la única tabla que desplaza en horizontal:
+    `min-w-[900px]`): `th`/`td` `sticky right-0` con fondo propio (`bg-surface-container` en
+    el `th`; `bg-white` + `group-hover:bg-surface-container` en la celda, con `group` en la
+    fila) y filete `before:` de 1px a su izquierda. El envoltorio `overflow-x-auto` es
+    `@container` y el filete se oculta con `@[900px]:before:hidden`: solo se ve cuando la
+    tabla realmente se desplaza (ancho real del contenedor, no un breakpoint del viewport).
+    Sus acciones son 3 ranuras fijas de 36px (ojo, lápiz y "+" solo si aplica), así que el
+    encabezado "ACCIONES" va `text-left`: empieza en la misma x que el ojo.
+  - **Cabecera de las vistas "ver"** (Equipo, Empleado, Usuario, `CatalogoRegistroView`):
+    grid `grid-cols-[minmax(0,1fr)_auto]` con el envoltorio del texto en `contents` (no
+    cambia el orden del DOM: eyebrow → h1 → bajada → botón). Eyebrow `col-span-2`; "Editar"
+    en `col-start-2 row-start-2`: en móvil `self-start mt-px` (centrado con la primera línea
+    del título, 26/30px) y la bajada `col-span-2` a todo el ancho; desde `md:` el botón
+    `row-span-2 self-end` (al pie de la bajada) y la bajada `md:col-span-1`.
+  - **Alturas**: inputs, selects y `SearchableSelect` de formulario `h-11` (44px); botones
+    de formulario y de cabecera `h-10`; volver `h-9`; botones ícono `h-9 w-9`; `Buscador`
+    `h-11`.
+  - **Márgenes**: todas las pantallas (listas, formularios, vistas, hojas, búsqueda) usan el
+    mismo contenedor `px-4 pt-6 pb-10 tablet:px-8 tablet:pt-8 md:px-8 md:pt-10` con su
+    `max-w` de siempre.
+    Formularios y vistas "ver" alinean su tarjeta a la IZQUIERDA del mismo carril de 1200px
+    que las listas, para que su borde izquierdo coincida con el de ellas en cualquier ancho:
+    `max-w-[600px]` + `ml-[max(0px,calc((100%_-_1200px)/2))]` (el 1200 debe ser el
+    mismo `max-w` de las listas), o un envoltorio `mx-auto max-w-[1200px]` con la tarjeta
+    dentro sin `mx-auto`. Solo el papel de las hojas va centrado. (Desde el 2026-09-25 las
+    vistas y formularios del **Catálogo** ocupan el carril completo; ver "Ancho de ver y
+    editar".)
+  - Orden de botones: el de siempre (Cancelar a la izquierda, primario a la derecha,
+    alineados a la derecha en escritorio); el rediseño no mueve ni cambia de tipo ningún
+    botón. La hamburguesa del `MobileHeader` va a la izquierda, del lado del que entra el
+    cajón.
+- **Foco (un solo indicador por elemento)**, definido en `index.css`; las pantallas no ponen
+  clases de foco propias en sus inputs:
+  - Botones, enlaces, tarjetas clicables: anillo azul `foco` de 2px con 2px de separación en
+    `:focus-visible`. Sigue el radio propio del elemento (no se fuerza `border-radius`).
+  - Inputs, selects y textareas: sin anillo azul (el navegador los marca `:focus-visible`
+    también con el mouse); el borde pasa a tinta y un filete de 1px en la sombra lo engrosa
+    a 2px. Reemplaza el borde + anillo azules de `@tailwindcss/forms`. El disparador de
+    `SearchableSelect` (un botón que se ve como campo) imita lo mismo con
+    `focus:border-on-surface focus:ring-1 focus:ring-on-surface`; ABIERTO baja a solo
+    `border-on-surface` (1px), porque el indicador grueso lo lleva el buscador del
+    desplegable, donde se teclea (un solo contorno fuerte a la vez). El `Buscador` (sin
+    borde) usa `focus:shadow-tarjeta-foco`.
+  - La hoja de papel conserva sus clases de foco propias (ganan por ser utilidades).
+- **Cordillera de fondo** (`components/SierraFondo.jsx`, componente decorativo autorizado):
+  tres capas SVG de montaña en `bosque` fijas al pie (`clamp(240px,42vh,420px)`, opacidades
+  8/22/42%) con deriva lenta (120s / 80s en contrasentido / 52s), más un destello de luz y
+  ráfagas de viento intermitentes (sección 2026-09-26). La deriva queda quieta en táctil
+  (teléfono y tablet); sin animación con movimiento reducido; oculta al imprimir. La montan `AppLayout` (detrás del
+  shell, z-0) y `NotFound`. **Regla de contraste**: ningún texto a nivel de pantalla va
+  directo sobre la montaña; va en tarjeta blanca o sobre papel. **Sin `backdrop-blur` en
+  ningún tamaño** sobre la cordillera: la sierra deriva sin fin y un `backdrop-filter`
+  encima la re-muestrea y desenfoca en cada cuadro (costo de GPU constante en las PC de
+  planta), y en móvil daba tirones al hacer scroll. Barras inferiores, pie (la pastilla
+  "© LEGUMEX", también desde `md:`) y cabeceras van en `bg-papel` opaco, sin blur (al 95%
+  se leía a través el texto que pasa por debajo; con velo al 90% la montaña se veía bajo el
+  texto del pie). El token `papel-velo` queda disponible, sin uso en `src/`.
+- **Shell** (`layouts/AppLayout.jsx`): menú lateral de 240px (`w-drawer-width`) transparente
+  sobre el papel (ítem activo = tarjeta blanca), tarjeta de perfil al pie ("Cerrar Sesión"
+  con `active:scale-[0.97]`, ícono sin rojo); `<main data-sheet>` scrollea por dentro, es
+  transparente y reserva el canal de la barra de scroll (`md:[scrollbar-gutter:stable]`)
+  para que el contenido no salte. El shell es `relative` sin z-index a propósito: no crea
+  contexto de apilamiento y el cajón (z-50), la barra móvil (z-30), las barras de acciones
+  (z-30), el Toast (z-70) y los portales (diálogos, SearchableSelect) compiten en el
+  contexto raíz. Móvil: barra superior de 56px en `bg-papel` OPACO (al 95% se leía el
+  texto que pasa por debajo) y sin blur, isotipo con `alt=""` (el nombre ya va en texto),
+  hamburguesa a la izquierda, y cajón desde la izquierda (`invisible` cerrado, para que no reciba foco).
+  - **Barras de acciones de las hojas** (entrega, devolución y sus vistas): `fixed inset-x-0
+    bottom-0 md:left-drawer-width z-30` con el atributo **`data-barra-inferior`** (lo usa el
+    Toast en `index.css`), de borde a borde del área de contenido y por encima del canal del
+    scroll (una barra sticky dentro del `<main>` quedaba 8px corta y, al final del scroll,
+    suelta sobre la montaña). **Transparente** desde el 2026-09-25 (la franja de papel con
+    filete se veía como una línea blanca sobre la cordillera): la barra lleva
+    `pointer-events-none` y su contenedor `[&>*]:pointer-events-auto`, así el hueco entre
+    botones no bloquea clics ni scroll. Los botones flotan con `shadow-toast` y el texto de
+    estado ("Complete los datos…") va en pastilla `bg-papel` opaca con filete (regla de
+    contraste: nada de texto suelto sobre la montaña ni sobre el contenido); el error de
+    validación, en `bg-error-container` opaco. En escritorio lleva `md:overflow-hidden md:[scrollbar-gutter:stable]`: reserva
+    el mismo canal de 8px que el `<main>`, así su contenido (`mx-auto max-w-4xl`) queda
+    alineado con la hoja. Costo aceptado: tapa los últimos ~64px del riel de scroll del
+    `<main>`. El espacio para que nada quede debajo NO va en la hoja sino en el `<footer>`
+    hermano: la raíz de la pantalla lleva
+    `[&+footer]:pb-[calc(<alto>+env(safe-area-inset-bottom))] md:[&+footer]:pb-[88px]`, con
+    `<alto>` = alto de la barra en móvil + 24px (88 / 114 / 136 según cuántas filas ocupe la
+    barra de cada hoja). Si una barra cambia de alto, se ajusta ese número (y el del Toast,
+    abajo). El `<main>` tiene `scroll-pb-36` para que un campo enfocado con Tab no quede bajo
+    la barra. `animate-view-in` va en el contenedor interior, nunca en un ancestro de la
+    barra.
+  - **Toast** (`[data-toaster]`): abajo en móvil (`bottom-[calc(16px+env(safe-area-inset-bottom))]`,
+    a lo ancho con 12px de margen, entra subiendo); arriba en móvil tapaba el botón "volver"
+    justo después de guardar y el toque solo cerraba el aviso. Desde `sm:` va arriba a la
+    derecha (bajo la barra móvil de 56px hasta `md:`) y desde `md:` en
+    `right-[max(42px,calc(50vw_-_715px))] top-10`: borde derecho en el del carril de 1200px
+    de listas y formularios (32px de padding del `<main>` + 10px de canal de scroll; por
+    encima de ~1512px el carril se centra y `50vw − 715px` lo sigue) y borde superior a la
+    altura del botón volver. Excepciones (reglas en `index.css`):
+    1. **Hojas con barra fija** (`data-barra-inferior`): en TODOS los tamaños va 12px por
+       encima de la barra y, desde `md:`, alineado con el borde derecho de sus botones
+       (arriba tapaba el eyebrow de la hoja). La barra mide 64/90/112/116px según ancho,
+       número de botones y si muestra un error de validación, así que no se adivina en
+       CSS: mientras hay avisos, `Toast.jsx` la mide con un `ResizeObserver` (y un
+       `MutationObserver` la sigue si aparece o desaparece con el aviso visible) y escribe
+       en su propio contenedor `data-sobre-barra`, `--alto-barra` (alto real, safe-area
+       incluida) y `--derecha-barra`. Es puramente visual: sin estado de React, sin tocar
+       las páginas. Regla: `[data-toaster][data-sobre-barra] { top:auto;
+       bottom: calc(var(--alto-barra) + 12px) }` y desde `md:` `right: var(--derecha-barra)`.
+       No usa `:has()`, así que vale en cualquier navegador.
+    2. **Cajón móvil abierto** (diseño móvil, el overlay lleva `data-cajon-abierto`):
+       `body:has([data-cajon-abierto]) [data-toaster]` → dentro del cajón (`left: 0.75rem`,
+       ancho `min(19rem, 86%) − 1.5rem`), a `bottom: 8.75rem`, por encima de la tarjeta de
+       perfil / "Cerrar Sesión". En `rem` para que en tablet crezca con el cajón. Gana a la 1.
+    3. **Sin `:has()`** (Firefox < 121, p. ej. ESR 115 en Windows 7/8): regla
+       `@supports not selector(:has(*))` → en móvil (`<640`) el toast sin barra sube
+       siempre a `140px + safe-area`, por encima de "Cerrar Sesión" con o sin cajón.
+- **Login** (`pages/Login.jsx`, estilos con prefijo `lg-` en `index.css`): telón verde con el
+  logo que baja con borde de cordillera (solo la primera vez por sesión del navegador,
+  `sessionStorage`); **mientras cubre, la tarjeta queda `inert`** (no se puede escribir a
+  ciegas; en React 18 se pasa como string: `inert={telonCubre ? '' : undefined}`; al migrar
+  a React 19 cambiar a `inert={telonCubre}`). La tarjeta termina de aparecer a los 2.5 s,
+  junto con el telón, con la opacidad LINEAL y aparte del salto (`lgCardRise` + `lgFade`),
+  e `inert` se quita en el `animationend` de su `lgFade`: nunca se ve completa antes de
+  estar interactiva. Al quedar libre se enfoca el usuario. Sol, nubes, cuatro capas de montaña con
+  parallax al mouse (una escritura por cuadro con `requestAnimationFrame`; apagado en
+  pantallas táctiles y con movimiento reducido), titular línea por línea y tarjeta que
+  sube. "Verificando…" con isotipo que se llena; si es correcto, saludo en verde letra por
+  letra (la ola se ajusta para que la última letra termine su salto de 360 ms antes de
+  navegar) y check dibujado (anunciado a lectores de pantalla por una región `aria-live`
+  montada desde el inicio; las letras van `aria-hidden`), y se navega **650 ms después**
+  (400 ms con movimiento reducido) al mismo destino de siempre: se cobra en cada inicio de
+  sesión, por eso es corto. Si falla, aviso y sacudida del formulario. La lógica de
+  `login()` / destino / `replace` no cambió.
+- **Cargas con el logo y "acta registrada"** (2026-09-24, estilos al final de `index.css`):
+  - `IsotipoCarga.jsx`: isotipo que se llena de izquierda a derecha. Reemplaza al círculo
+    que gira (`Loader2`, ya no se usa) en todo botón que guarda o genera algo. `tono="claro"`
+    sobre botón negro, `tono="tinta"` sobre fondo claro; alto `h-3` en botones y `h-2.5` en
+    botones de solo ícono. También en el botón de confirmar de `ConfirmDialog` cuando
+    `procesando` (junto al texto de siempre, antes decía "Procesando..."; lleva `aria-busy`).
+    En las barras de las hojas se oculta en el diseño móvil (`movil:!hidden`)
+    porque partía el texto del botón; ahí la espera con logo ya da la señal.
+  - `IndicadorGuardando` (exportado de `Toast.jsx`, `<IndicadorGuardando activo={estado}
+    texto="Guardando" />`): pastilla blanca con el isotipo que se llena y texto mono, dentro
+    del mismo contenedor del Toast. Así hereda su posición (arriba a la derecha en
+    escritorio, abajo en móvil, sobre la barra de las hojas) y el aviso negro de "ya quedó"
+    aparece en el mismo lugar cuando termina. Entra a los 150ms: una respuesta instantánea
+    no parpadea. **Es la señal de todas las escrituras del CRUD**: crear/editar marca,
+    departamento, equipo, empleado y usuario, características, eliminar una entrega, y en
+    el historial agregar/quitar equipo y corregir observaciones (para estas últimas cada
+    vista tiene un contador `corrigiendo`, solo visual, alrededor de la llamada).
+  - `EsperaLogo.jsx` (`<EsperaLogo activa={estado} mensaje="…" />`): espera de pantalla
+    completa, con las montañas del isotipo en silueta negra de fondo y el isotipo a color
+    llenándose de abajo arriba, mensaje mono y barra. **Solo para lo pesado**: guardar una
+    entrega o una devolución y generar el PDF. Bloquea los clics desde el inicio, se ve a
+    los 250ms y, una vez visible, dura al menos 600ms. **No se agregan retrasos a las
+    operaciones.** Las listas y vistas siguen con esqueletos (`Skeleton`) al cargar.
+  - `ActaRegistrada.jsx`: al guardar una entrega o devolución, tarjeta con check que se
+    dibuja, dos anillos y chispas. Desde 2026-09-26 **no se va sola**: queda abierta con
+    "Ver acta" (abre el acta recién creada) y "Cerrar" (va a donde iba antes: historial de
+    entregas / la entrega de origen). Esc = Cerrar. Ver la sección de 2026-09-26.
+- **Movimiento**: `animate-view-in` (entrada de pantalla: 8px, 280 ms, curva estándar),
+  `animate-pop-in` (filas/tarjetas nuevas), `animate-drop-in` (desplegables),
+  `animate-badge-pop` (contadores), `animate-card-rise` (tarjeta del 404), `shimmer`
+  (esqueletos), `animate-hint-in` (errores de campo), `animate-icon-pop` (ícono del Toast),
+  `animate-overlay-in` (fondo del cajón), `animate-toast-in` / `animate-toast-in-abajo`
+  (Toast escritorio / móvil), `animate-sierra-*` (deriva de la cordillera), `data-reveal`
+  (revelado al hacer scroll con `animation-timeline: view()`, solo donde el navegador lo
+  soporta, solo escritorio y **solo en tarjetas**: en filas `<tr>` no funciona porque la
+  línea de tiempo se ata al contenedor con overflow de la tabla, y en tarjetas `md:hidden`
+  tampoco, porque bajo 768px está anulado). Solo existen los keyframes que usa alguna
+  pantalla (`page-in` se quitó por no tener uso).
+  **Toda animación de entrada usa `fill-mode: backwards` (nunca `both`/`forwards`) y
+  termina en `transform: none` / `translate: none`**: un transform residual convierte al
+  elemento en contenedor de sus hijos `position: fixed` (el buscador con lista de opciones
+  quedó atrapado así una vez, y la espera con logo quedaba dentro del área de contenido).
+  Ojo: con `both`, Chrome deja un `matrix(1,0,0,1,0,0)` al final aunque el keyframe diga
+  `none`; con `backwards` el elemento vuelve a su estilo propio al terminar. Solo las
+  animaciones que deben quedarse en su estado final (salidas, anillos y chispas de
+  `ActaRegistrada`, login) usan `both`, y ninguna envuelve elementos `fixed`.
+  `prefers-reduced-motion` se respeta globalmente en `index.css` (todo se resuelve al
+  instante; sierra, parallax y revelado apagados).
+- **Animación de "presión" en botones/tarjetas clicables**: todo `<button>` y todo `<Link>`
+  clicable del sistema lleva `active:scale-[0.97] transition-transform` (botones
+  normales), `active:scale-[0.90]` (botones chicos de solo ícono: ver, editar, cerrar,
+  quitar) o `active:scale-[0.99]` (tarjetas grandes tipo Catálogo/Nueva Acta/Historial).
+  Si un botón ya tenía otro efecto `active:` (como `active:brightness-95`), se combinan,
+  no se reemplazan; si ya usa `transition-all`, basta con `active:scale-[...]`. La
+  auditoría del 2026-09-11 encontró 17 clicables sin ella (justo los botones principales
+  de las listas, los "Cancelar", los "Volver al historial" y el menú lateral) y se
+  completaron. Cualquier botón o tarjeta clicable nueva debe llevarla para no romper la
+  consistencia. (Excepción: los enlaces de texto subrayado dentro de un párrafo, como
+  "Regístrala en Marcas", no la llevan -- un elemento en línea no se escala.)
+- **Grillas de tarjetas fluidas**: en vez de un tope fijo de columnas (`sm:grid-cols-2
+  xl:grid-cols-3`) con un `max-w` angosto, las pantallas de selección de tarjetas
+  (`Catalogo.jsx`, `Historial.jsx`, `NuevaActa.jsx`) usan un `style` inline
+  `gridTemplateColumns: 'repeat(auto-fit, minmax(Npx, 1fr))'` dentro de un contenedor
+  `max-w-[1200px]` (el mismo ancho en las tres pantallas, para que el espacio lateral se
+  vea igual en todas). Esto evita huecos vacíos cuando el número de tarjetas no llena las
+  columnas fijas, y hace que las tarjetas crezcan para ocupar el ancho disponible. Patrón
+  ya usado antes en `SkeletonDetalle` (`Skeleton.jsx`), reutilizado en vez de inventado.
+  Las tres comparten además todo lo demás, con `Catalogo.jsx` como referencia: márgenes
+  del contenedor común (ver Recetas), separación `gap-stack-lg`, `minmax(280px, 1fr)`,
+  tarjeta `rounded-tarjeta shadow-tarjeta p-6`, ícono en caja `h-14 w-14` y título de
+  tarjeta `headline-md` (el título de la pantalla es `display-lg`). Hasta el 2026-09-11
+  cada una tenía los suyos.
+- **Ancho de "ver" y "editar"**: la vista de detalle y el formulario de una misma entidad
+  usan el mismo ancho, para que el contenido no salte al pasar de una a otra. **Catálogo**
+  (Marcas, Departamentos, Empleados, Equipos; 2026-09-25): el mismo carril que su lista,
+  `mx-auto max-w-[1200px]`, y los campos se reparten para no quedar estirados: Equipos
+  4 columnas desde `xl:` (Nombre ×2 · Modelo · Marca / Serie · Tipo · Original · Usado) y
+  datos de la vista en 6 desde `xl:`; Empleados Código · Nombre · Departamento en una fila
+  desde `lg:`. Usuarios sigue a 600px alineado a la izquierda.
+- Patrón repetido en TODO el sistema para listas: **escritorio** = tabla con íconos de
+  acción (ojo=ver, lápiz=editar, basura=eliminar); **móvil** = tarjetas apiladas, sin
+  botones visibles, tocar la tarjeta entera navega al detalle. El punto de quiebre entre
+  "móvil" y "escritorio" en el layout general es **768px** (`md:` de Tailwind), y desde
+  el 2026-09-25 **solo con mouse o trackpad**: las pantallas táctiles (teléfono y tablet)
+  reciben siempre el diseño móvil (ver "Tablet").
+- Patrón repetido para filas repetibles de un formulario (características de un equipo,
+  equipos de una entrega, etc.): en escritorio pueden ir en tabla; en móvil siempre van
+  como tarjetas apiladas con cada campo etiquetado arriba, más un botón punteado "Agregar
+  otra/otro" al final, nunca una tabla angosta con scroll horizontal.
+- Selects que jalan datos de otra tabla del catálogo (Marca, Departamento, Equipo,
+  Empleado) nunca son un `<select>` plano: siempre usan el componente `SearchableSelect`
+  (buscador con lista filtrable), porque esas listas pueden crecer. En escritorio es un
+  desplegable bajo el campo; en móvil se abre como hoja completa (fondo oscuro + buscador
+  arriba + lista), igual que una alerta de confirmación.
+- **Serie como eje del selector de equipo** (`SearchableSelect` con `codigo`, 2026-09-17):
+  las opciones aceptan `{ id, name, codigo? }`. Con `codigo` la fila va a dos líneas (nombre
+  arriba, código en mono abajo, sin truncar), el código queda siempre completo a la derecha
+  del campo cuando hay opción elegida (lo que se trunca es el nombre), la búsqueda también
+  filtra por código ignorando mayúsculas/espacios/guiones/puntos (teclear los últimos 4-5
+  caracteres del sticker basta) y Enter elige la única coincidencia. Hoy solo lo usa el
+  equipo en Entrega de Equipo (`FormatoActa.opcionesEquipoParaFila`, `codigo` = serie,
+  ordenado por nombre y luego serie). Marca/Departamento/Empleado siguen pasando
+  `{ id, name }` y se ven igual. Motivo: diez "Dell Latitude" iguales solo se distinguen
+  por la serie, y antes iba pegada al final del nombre y se cortaba.
+- **Búsqueda por serie y filtro de estado en Catálogo → Equipos** (`EquiposList.jsx`,
+  2026-09-21): el buscador encuentra por nombre, marca y **serie**, y la serie se muestra
+  bajo el nombre (mono, mayúsculas) en la fila y en la tarjeta -- un resultado que no la
+  enseña no se puede contrastar contra la etiqueta del equipo. No hay columna aparte: la
+  tabla ya se desborda a 768px. La regla de comparación de series es `normalizarBusqueda`
+  (`utils/texto.js`), compartida con `SearchableSelect` para que los dos buscadores
+  encuentren exactamente lo mismo; ignora mayúsculas, espacios, guiones, puntos y guiones
+  bajos, y no matchea cuando la búsqueda normalizada queda vacía (teclear "-" no puede
+  devolver el inventario entero). Arriba de la lista, tres botones **Todos / Disponible /
+  En posesión** con los mismos tokens de color que el badge de cada fila. El estado NO es
+  un campo del equipo: se deriva cruzando con `/equipments/available`, así que el filtro no
+  se puede delegar al backend y **obliga a traer el inventario completo** -- entra por el
+  mismo `modo: 'todos'` de `useListaPaginada` que ya usaba la búsqueda (prop `filtroExtra`),
+  porque filtrar solo la página visible mostraría 4 de 20 filas mientras el paginador sigue
+  diciendo 57. Los botones se ocultan si `/equipments/available` falla (y el filtro se borra
+  de la URL), igual que el badge, para no ofrecer un filtro que daría un resultado
+  equivocado. El estado elegido vive en la URL (`?estado=disponible`) junto a `page`,
+  `limit` y `q`.
+- **Ficha del equipo desde el acta** (`EquipoDetalleModal.jsx`, 2026-09-17): en Entrega de
+  Equipo, el buscador de equipo muestra un ojo dentro del campo (prop `onVerDetalle` de
+  `SearchableSelect`, solo cuando ya hay equipo elegido) que abre una ventana emergente
+  con marca, modelo, serie, tipo, original/usado y características. Carga por ID
+  (`obtenerEquipo` + `obtenerMarca` + `obtenerCaracteristicasDeEquipo`, igual que
+  `EquipoView`), no del renglón del listado. Desde el 2026-09-25 es **editable** (solo
+  admin) y también se abre desde cada renglón de las vistas de entrega y devolución: ver
+  "Editar el equipo desde su ficha" en la sección de esa fecha. Corregir un equipo (serie,
+  nuevo/usado) corrige todas sus actas, porque el acta lee el equipo actual (decisión
+  tomada, ver `README.md`).
+- **Texto editable inline** (`InlineEditableText.jsx`, usado p. ej. en la vigencia del
+  membrete de Nueva Acta): el ícono de lápiz que indica que el texto es editable queda
+  siempre visible a baja opacidad (`opacity-40`), no solo con `group-hover`, porque en
+  móvil/táctil el hover nunca se dispara -- sube de opacidad al pasar el mouse en
+  escritorio, pero en táctil el affordance debe verse siempre. Por defecto no deja
+  guardar el texto vacío (vuelve el valor anterior); las observaciones del historial usan
+  `permitirVacio` + `placeholder="Sin observaciones"` para poder dejarlas en blanco (se
+  guardan como `null`).
+- Botón de "registrar nuevo" en las listas de historial: siempre visible en el encabezado
+  de la pantalla (junto al título), no solo cuando la lista está vacía -- patrón consistente
+  entre `HistorialEntregaList.jsx` y `HistorialDevolucionList.jsx`.
+
+## Sistema vivo (2026-09-29, rama `sistema-vivo`)
+
+Lo "vivo" de Tickets TIC traído a Formatos, adaptado a su arquitectura. El PDF queda
+fuera del modo oscuro y del cielo (tiene sus propios colores, `src/pdf/`).
+
+- **Colores como variables** (`src/tema/paleta.js`): `CLARO` y `OSCURO` con todos los
+  tokens; `tailwind.config.js` los registra como `rgb(var(--c-<token>) / <alpha-value>)`
+  y su plugin escribe `:root` (claro), oscuro bajo `prefers-color-scheme` (si no se
+  eligió claro) y bajo `[data-tema="oscuro"]`. Las
+  clases no cambiaron (`bg-white` = superficie; en oscuro es gris muy oscuro). Texto sobre
+  `bg-tinta` = `text-on-tinta` (no `text-white`). Selección del menú: `sel-bg`,
+  `sel-borde`; segmentados: `seg-on`, `seg-borde`. Sombras en `rgb(var(...))`.
+  Un color nuevo se agrega en las DOS paletas.
+- **Tema** (`utils/tema.js`, `components/BotonTema.jsx`): Automático → Claro → Oscuro,
+  guardado en `localStorage 'legumex_tema'` y aplicado en `<html data-tema>` por un script
+  temprano de `index.html` (sin parpadeo). El botón va en la tarjeta de perfil del menú.
+  Excepciones en oscuro (index.css, "Modo oscuro: excepciones"): logo invertido fuera del
+  papel, destello de la sierra atenuado.
+- **Hojas de las actas en oscuro** (decisión del 2026-09-29, opción 2): las 4 pantallas
+  de acta siguen el tema como el resto del sistema (con la hoja siempre clara se veía
+  una inconsistencia). Firmas en oscuro: el trazo y la imagen (`data-firma-tinta`) se ven
+  BLANCOS con un filtro solo de pantalla, sobre un recuadro (`data-firma-recuadro`) más
+  oscuro que la tarjeta y con filete visible. Lo que se guarda (PNG) y el PDF siguen en
+  tinta negra. El PDF sale igual en cualquier tema.
+- **Cielo según la hora de Guatemala** (`config/cielo.js`, UTC-6 fijo, no la hora del
+  equipo): noche < 5:30, amanecer < 7:00, día < 17:15, atardecer < 18:45, noche. Se marca
+  en `<html data-fase>` (script temprano en `index.html` con los mismos cortes + revisión
+  cada minuto desde `main.jsx`). La fase decide QUÉ hay en el cielo; el tema, la paleta.
+  `saludoHora()` da "Buenos días / Buenas tardes / Buenas noches" coherente con el cielo
+  (Login y `SaludoDelDia`).
+- **`CieloSistema`** (componente autorizado, en `AppLayout` y en el login): tinte del
+  fondo por fase, sol con halo y rayos (o luna creciente y estrellas con una fugaz cada
+  5 min), nubes en dos capas, motas de luz y bandada ocasional. Fijo detrás de todo, sin
+  clics, ids SVG únicos (`useId`), quieto con "reducir movimiento", no se imprime.
+- **Login**: su escena propia más el cielo de la hora (amanecer/atardecer con sol cálido,
+  noche con luna, estrellas y fugaz). Siempre en paleta clara, en cualquier tema.
+- **Cajón del menú** (teléfono y tablet): tinte de la hora arriba, sol o luna junto al logo
+  y dos cordilleras al pie, detrás de la tarjeta de perfil (`.cajon-*` en index.css).
+- **Recorrido guiado "¿Cómo funciona?"** (componente autorizado `Recorrido.jsx`, pasos en
+  `config/recorrido.js`): por rol (admin arranca en `/`, user en `/historial`); se ofrece
+  solo la primera vez de cada usuario en ese equipo (`localStorage
+  'legumex_recorrido_visto'`, lista de usernames) y lo repite el botón **?** junto al
+  tema. Ilumina el elemento (`data-recorrido="..."`), coloca la tarjeta sin taparlo, en
+  teléfono/tablet abre el cajón en los pasos del menú. Teclado ←/→/Esc, foco atrapado.
+  Si se agrega o mueve algo que un paso explica, actualizar su marca `data-recorrido`.
+- **Teclado en pantalla** (`utils/tecladoMovil.js`): publica `--vv-alto`, `--vv-arriba`,
+  `--vv-abajo` y `<html data-teclado>` con `visualViewport` (iPhone pone el teclado
+  encima; Android achica con `interactive-widget=resizes-content`). Barras inferiores
+  (`data-barra-inferior`) y avisos suben sobre el teclado; hojas y diálogos con
+  `data-sobre-teclado` se ajustan al alto visible. Al tocar un campo se centra (no con el
+  autofoco del código).
+- **Táctil**: campos a 16 px en táctil (iOS no hace zoom), sin desborde horizontal, área de
+  toque de ≥ 40 px en botones y enlaces chicos con un `::before` invisible (regla con
+  `:where()` para no pisar posiciones por clase), buscadores `type="search"` con tecla
+  "Buscar", usuario/serie/código sin autocorrección ni mayúscula automática.
+- **Clases de botón** (`@layer components` en index.css): `.btn-primario`,
+  `.btn-secundario`, `.btn-icono`, `.btn-icono-peligro` y `.campo` dan el ASPECTO
+  (colores, borde, radio, transiciones, estados); el tamaño (`h-*`, `px-*`, `w-*`) sigue
+  como utilidad en cada elemento. Reemplazan a las recetas repetidas (aprobado
+  2026-09-29).
+
+## Actas con el estilo del sistema (2026-09-27)
+
+Las pantallas de actas (hoja de entrega, registrar devolución, detalle de entrega y de
+devolución) conservaban la apariencia anterior al rediseño. Se unificaron con el resto
+del sistema sin cambiar estructura, campos, funciones ni el PDF (aprobado por el PM con
+antes/después):
+- `SeccionCard` (en `FormatoActa.jsx`, compartida por las 4): título `headline-md` en
+  negrita dentro de la tarjeta blanca, ícono gris; sin la franja gris en mayúsculas.
+- `Campo` tiene dos formas: editable (etiqueta `text-meta font-semibold` arriba, como los
+  formularios del Catálogo) y **`lectura`** (recuadro `rounded-xl bg-surface-container-high`
+  con etiqueta mono adentro, como "Datos del equipo" en la ficha). Las vistas y los datos
+  de la entrega en registrar devolución usan `lectura`; su `valorClass` ya no dibuja caja.
+- Campos y observaciones de la hoja = `inputClasses` de `EquipoForm`.
+- Encabezados de tabla y etiquetas de las tarjetas de equipo en táctil: mono `text-micro`
+  con fondo `bg-surface-container`, como las listas (`whitespace-nowrap`).
+- Migas debajo del botón volver (columna), como las demás pantallas.
+- Características del equipo (ficha y `CaracteristicasEditor`): recuadros como "Datos del
+  equipo" (nombre = etiqueta mono, descripción = valor); en edición siguen con clic.
+
+## Nueva entrega seguida, filtro por departamento e historial del colaborador (2026-09-27)
+
+- **"Nueva entrega"** en el momento de acta registrada (`ActaRegistrada`, acción `otra`):
+  abre una hoja en blanco al instante. `FormatoActa` es un envoltorio que monta la hoja
+  (`HojaActa`) con `key={location.key}`: navegar a la misma ruta la vuelve a montar desde
+  cero (colaborador, equipos, firmas y borrador limpios); la planta se conserva. Lleva el
+  scroll del `<main>` arriba (misma ruta: si no, se quedaba en las firmas).
+- **Filtro "Departamento"** en Historial / Entrega y Devolución (`useFiltrosActas`,
+  `?depto=<id>`, selector nativo en `FiltrosActas` vía `selectores`). El backend no filtra
+  actas por departamento: se compara `employee_department` por nombre en el cliente, igual
+  que el historial por departamento. No aparece dentro del historial de un departamento.
+- **Historial de actas en la ficha del colaborador** (`EmpleadoView`): entregas y
+  devoluciones, de la más nueva a la más vieja, con estado, extravíos y equipos; cada una
+  abre el acta y "volver" regresa al colaborador. Se filtra por `employee_id` en el
+  cliente (no se usa `?employeeId=` del backend: falló en una prueba del 2026-09-11).
+- Pendientes técnicos y de backend: sección "Pendientes y mejoras sugeridas" del `README.md`.
+
+## Borrador, aviso de sesión, "Ver acta" y volver por origen (2026-09-26)
+
+Salió de la revisión de uso real (pérdida del acta si la sesión vencía al finalizar, textos
+engañosos para RRHH, "volver" que sacaba de la sección). Todo es frontend; el backend no cambió.
+
+- **Borrador automático** (`hooks/useBorradorActa.js`): la hoja de entrega (`FormatoActa`,
+  solo `entrega`) y la de devolución (`RegistrarDevolucion`, una por entrega) guardan lo que
+  se va llenando en `localStorage` (`legumex_borrador:<usuario>:entrega` /
+  `...:devolucion:<id>`), 500 ms después del último cambio y al salir de la hoja.
+  Incluye colaborador, equipos, observaciones, planta y **firmas** (si no hay espacio para
+  las imágenes se guarda lo demás). Al volver a la hoja se recupera solo, con un aviso
+  "Recuperamos el acta que estabas llenando" + "Descartar" (con confirmación) / "Continuar".
+  Se borra al registrar el acta, al pulsar "Cancelar" o con "Descartar". Al recuperar, se
+  sueltan equipos que ya no están disponibles (entregados en otra acta) y, en devolución,
+  equipos que ya no están pendientes. La clave lleva el usuario: otra cuenta no lo hereda.
+- **Aviso de sesión** (`components/AvisoSesion.jsx`, montado en `AppLayout`): `AuthContext`
+  lee el `exp` del JWT (`venceEn`); en los últimos 5 min aparece una tarjeta con cuenta
+  regresiva ("Entendido" la oculta). Al vencer cambia a "Tu sesión venció" + "Iniciar
+  sesión". **No cierra la sesión sola** (quien firma termina su trazo). Si el token no es un
+  JWT con `exp`, no hay aviso. No hay renovación de token: no existe endpoint confirmado.
+  El login muestra "Tu sesión venció…" cuando se llegó ahí por vencimiento (`sesionVencida`).
+  Tras volver a entrar, el login regresa a la ruta donde se estaba y el borrador se recupera.
+- **"Ver acta" / "Cerrar"** en `ActaRegistrada`. El id del acta nueva sale de la respuesta
+  del POST si la trae; si no, se busca la más reciente (entrega: mismo colaborador en
+  `GET /delivery_documents`; devolución: `GET /return_documents?deliveryDocumentId=`). Si
+  no se encuentra, "Ver acta" va a la lista / a la entrega. Navega con `replace`: "atrás"
+  del navegador no vuelve a la hoja ya enviada.
+- **Volver por donde se llegó** (`utils/origenNavegacion.js`): quien abre una pantalla le
+  pasa `state: conOrigen(location, etiqueta)` y la pantalla usa `useOrigen(rutaFija,
+  etiquetaFija)`. Sin state (URL directa, recarga, menú) se queda la ruta fija de siempre.
+  Aplicado a: detalle de entrega (desde historial de departamento, ficha de colaborador,
+  devolución), detalle de devolución, y los formularios de edición (Equipo, Empleado,
+  Usuario, Marcas/Departamentos): editar abierto desde la ficha vuelve a la ficha con
+  "volver", "Cancelar" y al guardar. Registrar devolución reenvía el state de la entrega.
+- **Textos por rol en Historial**: el rol `user` (RRHH) ve "ver, buscar y descargar en PDF"
+  y "Buscar · Ver · PDF" (`descripcionHistorialLectura` en `config/formatos.js`); antes leía
+  "elimina" aunque no puede eliminar. `index.html`: título "Legumex · Formatos TIC".
+
+### Pendiente para cuando el backend lo permita: fechas corregidas en localStorage
+
+La corrección de la **fecha de entrega/devolución** (`EditorFechaLocal` / `useFechaLocal`)
+y de **Emisión/Vigencia** del encabezado se guarda solo en `localStorage` porque el backend
+no acepta cambiarlas (el PUT no recibe la fecha y no hay endpoint de configuración). Fue la
+solución decidida con el cliente y funciona, con estas limitaciones conocidas:
+- solo la ve ese navegador: otra PC u otro usuario ven la fecha original;
+- se pierde si se borran los datos del navegador;
+- un PDF descargado desde otra PC sale con la fecha original.
+
+**A futuro debe pasar al backend**: un campo/endpoint para corregir `delivery_date` /
+`return_date` y otro para la vigencia de los formatos; entonces el frontend deja de usar
+`localStorage` para esto.
+
+## Historial por departamento, filtros, CSV y edición en la ficha (2026-09-25)
+
+- **Historial por departamento**: Catálogo → Departamentos → ver muestra dos tarjetas
+  ("Historial de entregas" / "Historial de devoluciones") que llevan a
+  `/catalogo/departamentos/:id/historial/:tipo` (`DepartamentoHistorial.jsx`, solo admin).
+  Esa página carga el departamento y **reutiliza las mismas listas del Historial**
+  (`HistorialEntregaList` / `HistorialDevolucionList`) con la prop `departamento`: misma
+  tabla y tarjetas, cabecera y volver propios, sin columna Departamento, sin "Registrar", y
+  con **Exportar CSV de todas las actas que cumplen los filtros** (no solo la página).
+  El backend **no filtra actas por departamento** y los filtros documentados de
+  `/delivery_documents` fallaron en una prueba (nota en `api.js` y en "Dar de baja
+  equipos"), así que se trae el listado completo y se
+  compara en el cliente el nombre del departamento con `employee_department`
+  (`normalizarNombre`: sin acentos ni mayúsculas). Mientras el departamento carga, el
+  filtro no deja pasar nada (nunca se ve un instante el historial de todos). Si el backend
+  agrega un filtro por departamento, el cambio va en `DepartamentoHistorial.jsx`.
+  La vista del departamento usa el carril de 1200px, como todo el Catálogo.
+- **Filtros de actas** (`hooks/useFiltrosActas.js` + `components/FiltrosActas.jsx`): estado
+  (**En posesión** / Parcial / Devuelto -- el valor del backend sigue siendo `pendiente`,
+  solo cambia la etiqueta, también en el CSV; `status` en entregas, `delivery_document_status` en
+  devoluciones), planta (solo entregas) y rango de fechas, en la URL (`?estado=&planta=&
+  desde=&hasta=`), filtrados en el cliente vía `filtroExtra`. La lista de entregas tiene
+  ahora columna **Estado** (mismo chip que devoluciones; `utils/estadoEntrega.js`).
+  `usePaginaUrl` expone `setParametros({...})` para cambiar varios filtros en una sola
+  escritura (varias llamadas a `setParametro` seguidas se pisan). En móvil (< sm) los
+  filtros van plegados tras un botón "Filtros" con la cantidad puesta; desde sm siempre
+  visibles. Valores inválidos en la URL (fecha inexistente, estado desconocido) se ignoran.
+- **Equipos**: filtro por **marca** (junto al de estado); `?marca=` solo se aplica si existe
+  entre las marcas cargadas. No hay filtro por tipo ni por
+  nuevo/usado porque `GET /equipments` es reducido (id, name, brand, serie, registeredBy):
+  esos campos solo vienen en la ficha. Pedirlos al backend en el listado permitiría
+  agregarlos. **Exportar CSV** exporta solo la página actual; mientras dice "Generando CSV"
+  pide la ficha de cada equipo de la página (en tandas de 6) para incluir
+  modelo, tipo, original y uso.
+- **CSV** (`utils/csv.js` + `hooks/useExportacionCsv.js`): separador `;`, BOM UTF-8 y CRLF
+  (Excel en español lo abre bien), valores que empiezan con `= + - @` neutralizados con un
+  apóstrofo (inyección de fórmulas). Señal de carga del sistema: isotipo en el botón +
+  `IndicadorGuardando` "Generando CSV" + aviso negro "CSV descargado · N registros"; la
+  pausa mínima de 650 ms es solo para que la señal se vea.
+- **Serie al agregar equipo a un acta ya registrada**: los selectores de "Agregar equipo"
+  de `HistorialEntregaView` y `HistorialDevolucionView` usan `codigo` (serie visible y
+  buscable ignorando espacios/guiones), igual que la hoja de entrega.
+- **Editar el equipo desde su ficha** (`EquipoDetalleModal` con `editable`, solo admin): en
+  la hoja de entrega y en las vistas de entrega y devolución, el ojo del selector abre la
+  ficha con **Editar**; se editan nombre, modelo, marca, serie, tipo, original y usado con
+  el mismo `PUT /equipments/{id}` y la misma validación que `EquipoForm`, sin salir de la
+  página. **Excepción documentada** a "Editar es una página dedicada": quien la usa está a
+  mitad de un acta. Mientras se edita, el clic fuera no cierra y Escape / la X solo salen del
+  modo edición (el foco vuelve a "Editar"; Tab queda dentro del diálogo). Las características se siguen editando en Catálogo → Equipos.
+- **Ojo en cada renglón de equipo** de `HistorialEntregaView` y `HistorialDevolucionView`
+  (solo admin, también en equipo ya devuelto): abre la misma ficha editable con sus
+  características. El renglón es el detalle del acta: `hooks/useFichaEquipo.js` usa su
+  `equipment_id` si viene y, si no, busca el equipo por serie en `GET /equipments`
+  (una vez, se reutiliza; se olvida al editar un equipo). En la tabla de entrega, un
+  renglón devuelto deja el hueco del bote para que los ojos queden en una columna.
+
+## Destello y viento en la cordillera (2026-09-26)
+
+- "Light sweep" sobre las montañas del fondo (`SierraFondo.jsx`) y del login
+  (`Login.jsx`): una franja de luz blanca diagonal (`linearGradient`) recortada a la
+  silueta de cada capa (`clipPath` con el mismo polígono), dentro del mismo SVG que
+  deriva, así sigue a su montaña y nunca sale al cielo.
+- Empieza en la capa del frente (abajo) y sube a las de atrás con retraso (0 / 0.6 /
+  1.2s en la app; 0.5s por capa en el login). Inclinada con `skewX(24deg)`: avanza
+  primero por la base. Cruza en ~1.5s visibles y descansa: ciclo de 11s, solo
+  `transform` (`.sierra-brillo` / `@keyframes sierraBrillo` en `index.css`).
+- En el login el `rect` lleva `fillOpacity="1"` (si no, hereda la opacidad de su capa)
+  y la capa del frente, opaca y oscura, usa un brillo más tenue (0.28).
+- Con `prefers-reduced-motion` no se ve. Corre también en teléfono y tablet (es
+  intermitente y solo `transform`; la deriva sí sigue quieta en táctil).
+- **Ráfagas de viento** (mismo `SierraFondo.jsx`, `RAFAGAS`): tres trazos finos y curvos
+  en el verde de la marca muy tenue (`stroke-opacity` 0.28) que cruzan el cielo de la
+  cordillera de izquierda a derecha y cierran en un remolino. Cada una es un segmento
+  corto que recorre su curva (`pathLength=1` + `stroke-dasharray`/`dashoffset`,
+  `.sierra-viento` en `index.css`), escalonadas 0 / 2.2 / 4.6s en un ciclo de 14s.
+  `preserveAspectRatio="xMidYMax slice"`: en pantallas angostas se recortan los lados
+  en vez de aplastar los remolinos. Van detrás del contenido (solo se ven en los huecos);
+  con movimiento reducido no se ven.
+- **Login**: lleva las mismas ráfagas (`RAFAGAS` exportado de `SierraFondo.jsx`,
+  `.lg-viento` a la altura de las cimas) y un **acercamiento de profundidad** ("Ken
+  Burns", `.lg-zoom` / `@keyframes lgZoom`): cada capa crece despacio desde su base y
+  vuelve (18s ida y 18s vuelta, desde que termina la subida inicial); la del frente crece
+  más (×1.08) que la de atrás (×1.025) y esa diferencia da profundidad. Va en su propio
+  contenedor y con la propiedad `scale`, para no pisar el paralaje (`translate`) ni la
+  subida/deriva (`transform`). `.lg-capa` recorta solo a los lados (`overflow: clip
+  visible`) para que las cimas no se corten al crecer. Sin movimiento reducido: quieto.
+
+## Tablet (2026-09-25)
+
+- **Detección por dispositivo, no solo por ancho**: `sm`/`md`/`lg`/`xl`/`2xl` de
+  `tailwind.config.js` son `(min-width: N) and (hover: hover) and (pointer: fine)`. Una
+  pantalla táctil recibe el diseño móvil aunque mida 1024 o 1366px (un iPad Pro horizontal
+  mide lo mismo que una laptop; lo que las distingue es el puntero). Las media queries de
+  `index.css` usan la misma condición. Laptop o PC con mouse: igual que siempre (se
+  comparó captura por captura contra `main`: idénticas salvo la cordillera animada y el
+  saludo del día).
+- **`tablet:`** = táctil con 600px o más de ancho **y** de alto (un teléfono horizontal,
+  844×390, sigue siendo teléfono). En tablet `index.css` sube la letra base de 16 a
+  **19px**: los tamaños del sistema (`fontSize`, `spacing` y `borderRadius` del config)
+  están en `rem` -- a 16px son exactamente los mismos píxeles de antes --, así que el
+  diseño móvil crece ×1.19 (letra, botones, tarjetas, radios) en vez de quedarse del
+  tamaño del teléfono. Los contenedores de página llevan `tablet:px-8 tablet:pt-8`.
+  El cajón del menú mide `min(19rem, 86%)` (antes 304px) para que crezca igual.
+- **`tablet-h:`** = tablet horizontal (desde 1000px): las listas de tarjetas (Historial,
+  Equipos, Empleados, Marcas, Departamentos, Usuarios) van a **dos columnas**; un único
+  hijo (esqueleto o estado vacío) ocupa las dos. Datos del equipo a 3 columnas.
+- Firmas en tablet: una debajo de otra (el `sm:grid-cols-2` ya no aplica en táctil).
+- `movil:` reemplaza a `max-sm:` (Tailwind no genera `max-*`/`min-[...]` con breakpoints
+  con condición). Para un límite puro de ancho usar variante arbitraria:
+  `[@media(max-width:359px)]:`.
+- `future.hoverOnlyWhenSupported`: `hover:` solo con mouse; en táctil el hover se
+  quedaba "pegado" tras tocar una tarjeta.
+- No se usa `zoom` de CSS: descuadraría la captura del PDF (html2canvas) y el trazo de la
+  firma en Safari del iPad.
+- Probado en 820×1180, 1180×820, 1366×1024 (táctil), 1366×768 (mouse), 390×844 y 844×390.
+
+## PDF de las actas: identidad Sierra y peso (2026-09-25)
+
+- **Peso**: `utils/generatePdf.js` captura cada hoja en **JPEG al 92%** (antes PNG, que
+  jsPDF guardaba casi sin comprimir: ~11 MB por hoja, 22 MB un acta de 2 hojas; ahora
+  ~210 KB por hoja) con `compress: true` y alias por captura. Misma escala 2, el texto
+  se ve igual de nítido.
+- **Cordillera como fondo de cada hoja**: las tres capas de `SierraFondo` en verde bosque
+  muy tenue (opacidades 0.03 / 0.05 / 0.075) ocupando el 40% inferior de la hoja, detrás
+  de firmas, observaciones y pie. Es el **fondo** de `.lgx-pdf.page` en
+  `pdf/designSystemPdf.js` (no un hijo ni un `::after`: el reparto en hojas no la mueve y
+  html2canvas corría el pseudo-elemento). El SVG mide la hoja entera (816×1154, montañas
+  abajo) y se pinta a 100%×100%: con una franja más baja html2canvas dejaba un filete en
+  el borde de la imagen, y sin `width`/`height` propios la recortaba. Se probó a hoja
+  completa y se descartó: ensuciaba campos y tabla y gastaba mucha tinta.
+- **Cresta bajo el título**: el perfil de montaña del logo en línea fina entre dos filetes
+  (`.cresta` en `title()`).
+- **Firmas reales en el PDF**: en pantalla la firma es un `<img>` con el link del backend,
+  pero html2canvas solo puede capturar imágenes de otro origen si el servidor manda CORS,
+  y el `/storage` de Laravel no lo hace. `pdf/datosPdf.js` (`firmaParaPdf`) descarga la
+  firma antes de armar el HTML y la incrusta como data URL, pidiéndola primero a
+  `/storage/<ruta>` del MISMO servidor del frontend, que la pasa al backend: **proxy de
+  Vite** en desarrollo (`vite.config.js`, misma base que `STORAGE_BASE_URL`) y **de nginx**
+  en Docker (`docker/entrypoint.sh` genera `/etc/nginx/storage-proxy.conf`, incluido con
+  comodín en `nginx.conf` para que nginx arranque aunque no exista; `proxy_pass` con
+  variable para que un DNS caído no impida el arranque). Si no hay proxy, prueba el link
+  directo; si nada devuelve una imagen, queda "Sin firma", se avisa con un toast ("No se
+  pudieron incluir las firmas en el PDF") y la consola muestra `[PDF] No se pudo incluir la
+  firma` con cada dirección probada y su respuesta. Firmas en **S3** (link completo
+  `https://…amazonaws.com/…`, posible según `api.js`): van por `/firma-remota/<host>/<ruta>`,
+  middleware en `vite.config.js` y `location` regex en nginx, **solo** hosts
+  `*.amazonaws.com`, solo GET y solo imágenes (no es un proxy abierto). Un hook
+  `configureServer` de Vite NO debe devolver nada (si devuelve el `use()`, el dev server no
+  arranca). Se quitaron las rutas de firma
+  de prueba que usaba la entrega. Requisito en producción: el contenedor del frontend
+  debe poder llegar al backend en la URL de `VITE_AUTH_API_URL` / `VITE_STORAGE_URL`
+  (con `localhost` apuntaría al propio contenedor).
+- **Características en el PDF**: `caracteristicasDeRenglones` (mismo `datosPdf.js`) pide
+  las de cada equipo (id del renglón o, si no viene, por serie en el catálogo;
+  `utils/equipoDeRenglon.js`, compartido con `useFichaEquipo`), de 4 en 4. Van en una
+  fila propia bajo la del equipo, a lo ancho (`filaCaracteristicas`), y el reparto en
+  hojas nunca la deja separada de su equipo. Un equipo que falla queda sin
+  características; nunca impide el PDF.
+- **Muchos equipos**: probado con 10 (el máximo que ha tenido alguien), textos largos y
+  una serie de 31 caracteres: las celdas parten palabras largas (`overflow-wrap`) y la
+  tabla sigue en una hoja "(continuación)" con su encabezado. ~690 KB con 3 hojas.
+- El membrete, los textos y el orden de las secciones no cambiaron.
+
+## Paginación de listados (2026-09-14)
+
+Las cinco listas con tabla (Marcas y Departamentos vía `CatalogoLista.jsx`, `EquiposList`,
+`EmpleadosList`, `HistorialEntregaList`, `HistorialDevolucionList`) se paginan contra el
+backend (`paginacion.md`: `limit` + `page` → `{ data, total, currentPage, lastPage }`).
+Sin librería externa: el estado vive en la URL con `useSearchParams` de React Router.
+
+- `?page=N&limit=M&q=texto`. **La URL siempre lleva `page` y `limit` explícitos** (los
+  mismos que van al backend): al entrar a la vista sin ellos, o con valores inválidos, el
+  hook la completa de inmediato con `replace` (`/catalogo/marcas` →
+  `/catalogo/marcas?page=1&limit=20`) (2026-09-17). Cambiar de página agrega entrada al
+  historial, escribir en el buscador reemplaza (y vuelve a página 1). Refrescar, "atrás" y
+  enlaces directos conservan página, tamaño y búsqueda.
+- **Memoria de la vista** (`utils/memoriaListas.js`, 2026-09-25): cada lista recuerda su
+  última query (búsqueda, filtros y página) por ruta en `sessionStorage`. Si se abre SIN
+  parámetros (botón "volver" de ver/editar, menú, redirección tras guardar) se restaura;
+  mientras tanto `usePaginaUrl` devuelve `restaurando` y `useListaPaginada` no pide nada
+  (no se ve un instante la lista sin filtrar). Pulsar el enlace de la misma lista ya abierta
+  sigue limpiando. Usuarios (sin URL) usa la misma memoria para su buscador. "Cerrar sesión"
+  la borra; el vencimiento del token no. `BuscarDevolucion` queda fuera a propósito: con
+  una sola entrega salta sola a la hoja y restaurar el responsable impediría volver.
+- `hooks/usePaginacion.js`: `TAMANO_PAGINA = 20` es el `limit` por defecto que se escribe
+  en la URL; el que se usa realmente es el `limit` de la URL (`limite`), y se mantiene
+  constante al navegar (cambiarlo invalida `lastPage`). `usePaginaUrl()` (solo URL) y
+  `useListaPaginada({ token, listar, filtrar, mensajeError })`, que hace la carga y expone
+  `registros`, `total`, `pagina`, `limite`, `ultimaPagina`, `busqueda`, `setBusqueda`,
+  `limpiarBusqueda`, `irAPagina`, `cargando`, `error`, `recargar`.
+- El texto del buscador vive en estado local del hook y la URL lo sigue (no al revés):
+  React Router v7 aplica cada navegación como transición de baja prioridad, y un `<input>`
+  controlado directamente por `q` perdía letras al escribir a velocidad normal (bug
+  corregido 2026-09-17). Un cambio externo de `q` (enlace del menú a la misma lista) sí se
+  adopta.
+- **Búsqueda híbrida**, porque el backend no tiene filtro de texto en estos listados: sin
+  texto se pide al servidor solo la página actual; con texto se pide UNA vez el listado
+  completo (sin `limit`), se filtra en el cliente como antes y se pagina en el cliente con
+  el mismo tamaño. Cuando el backend exponga `search`, se cambia en el hook, no en las
+  pantallas.
+- Página fuera de rango (`data: []` con `page > lastPage`, p. ej. al borrar el último
+  registro de la última página) → el hook sustituye en la URL por la última página válida.
+  Tras eliminar (HistorialEntrega) se vuelve a pedir la página actual (`recargar`), no se
+  quita la fila a mano.
+- `components/Paginador.jsx` (autorizado explícitamente): "Mostrando 1–20 de 57 marcas ·
+  Página 1 de 3" + Anterior / números con "…" / Siguiente. **Se muestra SIEMPRE** debajo de
+  la tabla / tarjetas -- también con una sola página o con 0 registros ("0 marcas · Página
+  1 de 1", flechas deshabilitadas) -- para que se sepa en qué página se está y cuántas hay
+  (regla del 2026-09-17). Solo se oculta mientras carga (esqueleto) o si hubo error. En
+  móvil los números se sustituyen por "Página 2 de 5". Recibe `tamano={limite}` para
+  calcular el rango. Es el único componente de paginación: toda lista nueva lo reutiliza.
+  Por sí solo se dibuja como una franja gris con el conteo en mono ("MOSTRANDO 1–20 DE 57
+  MARCAS"). Las listas con tabla lo meten **dentro de la tarjeta de la tabla**, en el pie
+  gris, y le pasan la prop de solo estilo `enPie`: en escritorio pierde su propia tarjeta
+  para no dibujar una caja dentro de otra; en móvil (tarjetas) sigue siendo una tarjeta
+  suelta debajo. Sus botones miden 40px de alto en móvil (objetivo táctil) y 32px desde
+  `md:`, dentro del pie. (Antes lo detectaba con un selector sobre la clase del padre; se cambió
+  por la prop explícita, que se puede encontrar con grep.)
+- Las funciones `listar*` de `api.js` aceptan `{ limit, page }` opcional (helper interno
+  `listarPaginado`, y `laravelRequest(..., { conMeta: true })` para no perder los
+  metadatos al desenvolver). Sin ese argumento siguen devolviendo el arreglo completo, que
+  es lo que usan selectores, combos y listados de apoyo (`listarDepartamentos` en
+  formularios, `listarCaracteristicas` para el conteo de Equipos, `listarDocumentosEntrega`
+  en BuscarDevolucion, etc.). Detalles de entrega/devolución y `/users` no se paginan.
+
+## Sección de Auditoría -- eliminada (2026-09-08)
+
+La sección de Auditoría (`src/pages/Auditoria.jsx`, la ruta `/auditoria`, y su ítem en
+`Sidebar.jsx`) se eliminó por completo del sistema, por instrucción explícita del usuario
+(el archivo `Auditoria.jsx` había quedado en `src/pages/` sin ruta; se borró el
+2026-09-11),
+después de confirmarse contra el swagger completo del backend que **no existe ningún
+endpoint de auditoría/logs del sistema** (se revisaron todos los tags documentados: Auth,
+Usuarios, Marcas, Departamentos, Equipos, Características, Empleados, Documentos de
+Entrega/Devolución y sus detalles -- ninguno expone algo así). Las funciones
+`obtenerAuditoria(token)` y `exportarAuditoriaExcel(token, password)` que quedaron escritas
+en `src/services/api.js` de una fase anterior siguen ahí sin usarse; si se llegan a limpiar
+o el backend agrega un endpoint real de logs a futuro, es tema aparte y requiere pedirlo
+explícitamente en esa sesión -- no reconstruir esta sección por iniciativa propia.
+
+Si se necesita algo parecido a "quién tuvo qué equipo y cuándo", eso sí existe hoy con datos
+reales: `GET /equipments/{id}/history` y los listados de `/delivery_documents` /
+`/return_documents` con sus filtros -- es auditoría de movimientos de equipo, no de cambios
+al catálogo (crear/editar/eliminar Marcas, Departamentos, Equipos, Empleados no deja
+ningún rastro en la API actual).
+
+## Limpieza de código muerto (2026-09-11)
+
+Tras una auditoría del proyecto se borraron, por no tener ningún uso (sin import, sin ruta,
+sin referencia): `Header.jsx`, `ConfirmModal.jsx` (duplicaba a `ConfirmDialog`),
+`BotonExcel.jsx`, `Loading.jsx`, `ErrorMessage.jsx` (tenía la sintaxis corrupta),
+`pages/Devolucion.jsx`, `pages/Auditoria.jsx`, `pages/CatalogoRegistroView.jsx` (el vivo
+es el de `components/`) y los tres `api.*.js`. De `api.js` salieron el bloque de "actas"
+del sistema pre-Laravel, `eliminarUsuario` (apuntaba a una ruta que nunca existió),
+`checkApiHealth` y `exportarActasExcel`. Si se busca alguno de estos, no es que se haya
+perdido: está en el historial de git.
+
+## Dar de baja equipos -- implementado y retirado el mismo día (2026-09-11)
+
+`DELETE /api/equipments/{id}` existe y está documentado como baja lógica: *"la tabla
+`equipments` usa soft deletes, así que el registro conserva su historial y deja de aparecer
+en los listados"*. Se implementó (basura en Catálogo → Equipos y botón "Dar de baja" en el
+detalle) y **se retiró el mismo día**, porque en la práctica el backend no cumple esa
+promesa: al dar de baja un equipo, `GET /delivery_documents` **y** `GET /return_documents`
+empiezan a responder 500 con *"Attempt to read property 'name' on null"* -- leen el nombre
+del equipo desde su registro (`equipments.name`) y no incluyen los que están dados de baja.
+Resultado: los dos historiales quedan caídos para todos los usuarios, no solo las actas que
+tenían ese equipo.
+
+Para volver a agregarlo hacen falta dos cosas del lado del backend: incluir los equipos
+retirados al leer entregas y devoluciones (en Laravel, `withTrashed()` en esa relación), y
+restaurar el equipo que ya se dio de baja (`deleted_at = NULL`) para levantar el historial.
+Mientras eso no esté, no hay forma de retirar equipo del inventario desde el sistema.
+
+Los filtros del listado de entregas (`status`, `employeeId`, `location`) tampoco se usan por
+el mismo tipo de problema: `?location=1` respondió con el mismo error de PHP. Ver el
+comentario en `listarDocumentosEntrega` (`src/services/api.js`). Nota del 2026-09-27: el
+código actual del backend aplica esos filtros sin nada raro, y el error ("property 'name'
+on null") es justo el de un equipo dado de baja, probado el mismo día; lo más probable es
+que la causa fuera esa y no el filtro. Antes de usarlos (por ejemplo para que "Ver acta"
+pida solo la última entrega del colaborador), probarlos contra el backend real.
+
+## Reglas de código del proyecto
+
+- **Un solo archivo de API**: todas las funciones que llaman al backend viven en
+  `src/services/api.js`. Nunca se crean archivos de API separados por sección (ya se
+  intentó antes y causó un bug de importaciones cruzadas -- quedó documentado como lección
+  aprendida). (Existían `api.additions.js`, `api.empleados.js` y `api.equipos.js`, que
+  parecían excepciones, pero eran borradores "para pegar al final de api.js" que ya se
+  habían pegado: nunca se importaban y ni siquiera funcionaban solos. Se borraron el
+  2026-09-11; hoy `api.js` es el único archivo de API.)
+- **Motor único de formularios**: ver sección arriba -- todo cambio a un formato físico va
+  en `src/config/formatos.js`, no como página nueva.
+- Vistas de "ver" siempre cargan el registro por ID contra la API (no por estado de
+  navegación), para que funcionen con URL directa y con refrescar la página.
+- "Editar" y "Nuevo" siempre son una página dedicada, nunca un modal.
+- No se inventan endpoints ni comportamientos del backend: si no está documentado o
+  confirmado, se pregunta antes de asumir.
+- No se crean componentes compartidos nuevos (por ejemplo un `<Button>` genérico) sin
+  autorización explícita, aunque parezca que "ordenaría" el código. El aspecto de botones
+  y campos va en las clases `.btn-primario`, `.btn-secundario`, `.btn-icono`,
+  `.btn-icono-peligro` y `.campo` (index.css, desde el 2026-09-29; antes era la receta de
+  Tailwind repetida en cada elemento); el tamaño y la posición siguen como utilidades.
+  Un botón nuevo usa esas clases, no una receta copiada.
+- Colores solo por token (clases de Tailwind o `rgb(var(--c-token))` en CSS), nunca hex en
+  JSX: así funcionan en claro y oscuro.
+
+## Reglas de trabajo (las más importantes)
+
+**Nunca se implementa ni se construye nada sin antes presentar el plan y recibir
+confirmación explícita del usuario**, salvo que el propio usuario ya haya dado la
+instrucción concreta y completa de qué cambiar (en ese caso se ejecuta directamente, sin
+volver a pedir permiso para lo ya autorizado). Esto aplica a cualquier cambio en este
+proyecto, por pequeño que parezca: ante la duda, se plantea qué se va a hacer y por qué, se
+espera el visto bueno (o los ajustes que pida), y solo entonces se toca código.
+
+Reglas relacionadas que se han repetido en las peticiones de trabajo:
+- **No tocar la sección de Auditoría** sin que el usuario lo pida explícitamente en esa
+  sesión (ver sección dedicada arriba).
+- No quitar ni agregar cosas al diseño que no se pidieron; usar el mismo estilo visual
+  existente (tamaños de botón, espaciados, colores, anchos de contenedor) en vez de
+  inventar uno nuevo -- por ejemplo, cualquier pantalla de tarjetas nueva debe respetar el
+  mismo `max-w-[1200px]` y el mismo patrón de grilla fluida que ya usan Catálogo, Nueva
+  Acta e Historial, no un ancho distinto "a ojo".
+- Reusar componentes y patrones ya existentes (`ConfirmDialog`, `Toast`, `EstadoVacio`,
+  `SearchableSelect`, `InlineEditableText`, `Buscador`, `Skeleton*`, `Paginador`,
+  `EquipoDetalleModal`, `SierraFondo` (decorativo), `CieloSistema` (decorativo),
+  `BotonTema`, `Recorrido`, etc.) en
+  vez de crear uno nuevo con el mismo propósito.
+- No crear componentes compartidos nuevos sin autorización explícita.
+- Tocar solo los archivos estrictamente necesarios para el cambio pedido.
+- Guiarse por el código y los patrones ya existentes en el proyecto; si algo no está claro,
+  preguntar en vez de suponer.
+- Antes de dar un cambio visual por terminado, verificar espaciados/tamaños contra la
+  pantalla de referencia más parecida que ya exista (por ejemplo, comparar contra Catálogo
+  al tocar Historial o Nueva Acta), no solo que "se vea bien" de forma aislada.
+
+## Flujo de trabajo técnico
+
+- El trabajo se hace en una **rama**, nunca directo en `main`: cada push a `main` publica
+  la imagen de producción (GitHub Actions → Docker Hub). Se sube a `main` solo con
+  aprobación explícita del usuario. (Al 2026-09-27 la rama `tablet` reúne tablet,
+  animaciones, borrador, aviso de sesión, "Ver acta", volver por origen, "Nueva entrega",
+  filtro por departamento e historial del colaborador, pendiente de subir a `main`.)
+- Antes de dar un cambio por bueno: `npm run build` (o `npx esbuild <archivo>
+  --loader:.jsx=jsx --jsx=automatic` por archivo) y probarlo en el navegador en los tres
+  diseños: escritorio (mouse), teléfono y tablet (táctil). Con Playwright: contexto con
+  `hasTouch`/`isMobile` para táctil, 390×844 teléfono, 820×1180 tablet.
+- Sin backend a la mano se prueba con un backend simulado que responda el mismo sobre
+  `{ statusCode, message, data }`; lo que no esté confirmado en el backend real se anota
+  como tal (no se da por hecho).
+- Commits en español, describiendo el cambio visible para el usuario.
+
+---
+
+*Este archivo se debe mantener actualizado según el sistema evolucione: es el documento de
+contexto permanente del proyecto. Los pendientes viven en `README.md`.*

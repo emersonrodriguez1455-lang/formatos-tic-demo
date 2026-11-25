@@ -1,0 +1,705 @@
+// En Docker las variables llegan en runtime vía window.__ENV__ (ver
+// docker/entrypoint.sh); en dev local se usa .env como siempre.
+const runtimeEnv = (typeof window !== 'undefined' && window.__ENV__) || {}
+const env = (key) => runtimeEnv[key] || import.meta.env[key]
+
+const API_URL = env('VITE_API_URL') || 'http://localhost:3000'
+
+// Backend real y actual (Laravel). API_URL (arriba) es el backend viejo de
+// Node/Express, que ya no existe: solo lo siguen usando obtenerAuditoria y
+// exportarAuditoriaExcel, restos de la sección de Auditoría que se dejaron a
+// propósito (ver CONTEXTO_SISTEMA_DISENO_REGLAS.md).
+const AUTH_API_URL = env('VITE_AUTH_API_URL') || 'http://localhost:8000/api'
+
+async function request(path, options = {}) {
+  const url = `${API_URL}${path}`
+
+  const response = await fetch(url, {
+    ...options,
+    headers: {
+      'Content-Type': 'application/json',
+      ...(options.headers || {}),
+    },
+  })
+
+  let data = null
+  try {
+    data = await response.json()
+  } catch (_) {
+    // respuesta sin cuerpo JSON
+  }
+
+  if (!response.ok) {
+    const message = (data && data.message) || `Error ${response.status}`
+    const error = new Error(message)
+    // Fase F: se adjunta el status HTTP para que las pantallas puedan
+    // distinguir un 409 (conflicto de concurrencia -- alguien más editó el
+    // mismo registro) de otros errores y mostrar un mensaje específico.
+    error.status = response.status
+    throw error
+  }
+
+  return data
+}
+
+// Llama con el token guardado en el header Authorization: Bearer <token>
+function authRequest(path, token, options = {}) {
+  return request(path, {
+    ...options,
+    headers: {
+      ...(options.headers || {}),
+      ...(token ? { Authorization: `Bearer ${token}` } : {}),
+    },
+  })
+}
+
+// Nombre del evento que se dispara cuando el backend contesta 401 con un
+// token que ya teníamos: el JWT venció (JWT_TTL, 60 min por defecto) o dejó de
+// ser válido. AuthContext lo escucha y cierra la sesión, para que RequireAuth
+// mande a /login en vez de dejar al usuario con "Unauthenticated." en cada
+// pantalla y un menú que lo sigue mostrando logueado.
+export const EVENTO_SESION_EXPIRADA = 'legumex:sesion-expirada'
+
+// El 401 de /login NO es sesión vencida: es usuario o contraseña incorrectos,
+// y ahí la pantalla de Login ya muestra su propio mensaje.
+function avisarSiSesionExpiro(path, status, token) {
+  if (status !== 401 || !token || path === '/login') return
+  window.dispatchEvent(new CustomEvent(EVENTO_SESION_EXPIRADA))
+}
+
+// Pega contra el backend Laravel (Legumex TIC Formatos API), desenvolviendo
+// su formato de respuesta { statusCode, message, data }. En error (4xx/5xx)
+// lanza un Error con .status y, si Laravel mandó validación 422, .errors =
+// { campo: ['mensaje', ...] }.
+//
+// `conMeta: true` devuelve { data, total, currentPage, lastPage } en vez de
+// solo `data` -- es para los listados paginados (ver paginacion.md): cuando
+// se manda `limit`, el backend aplana esos tres metadatos al mismo nivel que
+// `data`, y sin `conMeta` se perderían al desenvolver.
+export async function laravelRequest(path, { token, conMeta = false, ...options } = {}) {
+  const response = await fetch(`${AUTH_API_URL}${path}`, {
+    ...options,
+    headers: {
+      'Content-Type': 'application/json',
+      ...(token ? { Authorization: `Bearer ${token}` } : {}),
+      ...(options.headers || {}),
+    },
+  })
+
+  let body = null
+  try {
+    body = await response.json()
+  } catch (_) {
+    // respuesta sin cuerpo JSON
+  }
+
+  if (!response.ok || !body) {
+    avisarSiSesionExpiro(path, response.status, token)
+    const message = (body && body.message) || `Error ${response.status}`
+    const error = new Error(message)
+    error.status = response.status
+    if (body && body.errors) error.errors = body.errors
+    throw error
+  }
+
+  if (conMeta) {
+    return { data: body.data, total: body.total, currentPage: body.currentPage, lastPage: body.lastPage }
+  }
+  return body.data
+}
+
+// Listado GET con paginación opcional (paginacion.md). Regla del backend:
+// si la petición trae `limit`, pagina con ese tamaño y agrega total /
+// currentPage / lastPage; si no lo trae, devuelve TODOS los registros.
+//
+// Por eso las funciones listar* aceptan un segundo argumento opcional
+// { limit, page }:
+//   - sin él (selectores, combos, conteos) regresan el arreglo completo,
+//     exactamente como antes;
+//   - con `limit` regresan { data, total, currentPage, lastPage }.
+// `extra` son los filtros propios del recurso (employeeId, etc.), que se
+// combinan en la misma query string.
+async function listarPaginado(path, token, { limit, page } = {}, extra = {}) {
+  const params = new URLSearchParams()
+  for (const [clave, valor] of Object.entries(extra)) {
+    if (valor != null && valor !== '') params.set(clave, valor)
+  }
+  const paginado = limit != null
+  if (paginado) {
+    params.set('limit', limit)
+    if (page != null) params.set('page', page)
+  }
+  const query = params.toString()
+  return laravelRequest(`${path}${query ? `?${query}` : ''}`, { token, method: 'GET', conMeta: paginado })
+}
+
+// Variante de laravelRequest para envíos multipart/form-data (archivos +
+// campos) -- necesaria para POST /delivery_documents, que recibe las dos
+// firmas como archivo. A propósito NO se fija 'Content-Type': el navegador
+// arma el boundary del multipart solo; si se fija a mano, no puede
+// completarlo y la petición llega rota. El resto (desenvolver
+// { statusCode, message, data }, armar Error con .status/.errors) es igual
+// que laravelRequest.
+async function laravelRequestMultipart(path, { token, formData, method = 'POST' } = {}) {
+  const response = await fetch(`${AUTH_API_URL}${path}`, {
+    method,
+    headers: {
+      ...(token ? { Authorization: `Bearer ${token}` } : {}),
+    },
+    body: formData,
+  })
+
+  let body = null
+  try {
+    body = await response.json()
+  } catch (_) {
+    // respuesta sin cuerpo JSON
+  }
+
+  if (!response.ok || !body) {
+    avisarSiSesionExpiro(path, response.status, token)
+    const message = (body && body.message) || `Error ${response.status}`
+    const error = new Error(message)
+    error.status = response.status
+    if (body && body.errors) error.errors = body.errors
+    throw error
+  }
+
+  return body.data
+}
+
+// Login contra el backend Laravel.
+// A diferencia del backend viejo, no regresa id ni username del usuario --
+// solo name, role y el token JWT -- así que armamos "user" combinando eso
+// con el username que la persona escribió en el formulario.
+export async function login(username, password) {
+  const data = await laravelRequest('/login', {
+    method: 'POST',
+    body: JSON.stringify({ username, password }),
+  })
+
+  return {
+    token: data.token,
+    user: {
+      username,
+      name: data.name,
+      role: data.role,
+    },
+  }
+}
+
+// Renueva el token contra GET /check-status (protegido). No se usa todavía
+// en la app -- se deja lista para cuando se implemente la renovación
+// automática de sesión.
+export async function checkStatus(token) {
+  return laravelRequest('/check-status', { token, method: 'GET' })
+}
+
+// Registrar un usuario nuevo contra POST /register (solo admin). Devuelve
+// { id, name, username, role } -- Laravel nunca regresa la contraseña ni
+// emite token: el usuario creado debe iniciar sesión aparte.
+export async function registrarUsuario(token, { name, username, password, password_confirmation, role }) {
+  return laravelRequest('/register', {
+    token,
+    method: 'POST',
+    body: JSON.stringify({ name, username, password, password_confirmation, role }),
+  })
+}
+
+// Resto de la sección de Auditoría (eliminada): el backend real no tiene
+// endpoint de auditoría, así que apunta al backend viejo y no funciona. Se deja
+// a propósito, igual que exportarAuditoriaExcel -- ver
+// CONTEXTO_SISTEMA_DISENO_REGLAS.md. Aquí antes también estaban las funciones
+// de "actas" del sistema pre-Laravel (crearActa, listarActas, descargarPdfActa,
+// etc.), reemplazadas por /delivery_documents y /return_documents y sin ningún
+// uso: se borraron.
+export async function obtenerAuditoria(token) {
+  return authRequest('/api/auditoria', token, { method: 'GET' })
+}
+
+// Gestión de usuarios (panel admin, jwt.auth + admin). Antes estas 3
+// funciones llamaban a /api/usuarios contra el backend viejo (authRequest ->
+// API_URL) que nunca se conectó a esta pantalla -- se corrigen para usar el
+// backend real (laravelRequest -> AUTH_API_URL), igual que registrarUsuario.
+export async function listarUsuarios(token) {
+  return laravelRequest('/users', { token, method: 'GET' })
+}
+
+export async function obtenerUsuario(token, id) {
+  return laravelRequest(`/users/${id}`, { token, method: 'GET' })
+}
+
+export async function crearUsuario(token, payload) {
+  return laravelRequest('/users', {
+    token,
+    method: 'POST',
+    body: JSON.stringify(payload),
+  })
+}
+
+// `password` es opcional al editar: si se omite, el usuario conserva la
+// contraseña que ya tenía (así lo documenta la API) -- quien llama a esta
+// función decide si la incluye en `payload` o no.
+export async function editarUsuario(token, id, payload) {
+  return laravelRequest(`/users/${id}`, {
+    token,
+    method: 'PUT',
+    body: JSON.stringify(payload),
+  })
+}
+
+// Descarga de Excel de la Auditoría (resto de una sección eliminada, ver
+// obtenerAuditoria): requiere el header Authorization, así que se pide con
+// fetch y se convierte a blob. Va con POST + contraseña en el body, nunca en
+// la URL.
+async function descargarExcel(path, token, password) {
+  const response = await fetch(`${API_URL}${path}`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      Authorization: `Bearer ${token}`,
+    },
+    body: JSON.stringify({ password }),
+  })
+  if (!response.ok) {
+    let message = `Error ${response.status}`
+    try {
+      const data = await response.json()
+      message = data.message || message
+    } catch (_) {
+      // el error no vino en JSON
+    }
+    throw new Error(message)
+  }
+  return response.blob()
+}
+
+export async function exportarAuditoriaExcel(token, password) {
+  return descargarExcel('/api/auditoria/exportar/excel', token, password)
+}
+
+// ---------------------------------------------------------------------------
+// Catálogo (Laravel): marcas y departamentos.
+// Las rutas /brands y /departments solo exigen jwt.auth -- no piden rol admin,
+// así que cualquier usuario autenticado puede listarlas y editarlas.
+// Se usa laravelRequest (igual que login/registrarUsuario) porque viven en el
+// backend nuevo, no en API_URL.
+// ---------------------------------------------------------------------------
+
+export async function listarMarcas(token, paginacion) {
+  return listarPaginado('/brands', token, paginacion)
+}
+
+export async function crearMarca(token, { name }) {
+  return laravelRequest('/brands', {
+    token,
+    method: 'POST',
+    body: JSON.stringify({ name }),
+  })
+}
+
+export async function obtenerMarca(token, id) {
+  return laravelRequest(`/brands/${id}`, { token, method: 'GET' })
+}
+
+export async function actualizarMarca(token, id, { name }) {
+  return laravelRequest(`/brands/${id}`, {
+    token,
+    method: 'PUT',
+    body: JSON.stringify({ name }),
+  })
+}
+
+export async function listarDepartamentos(token, paginacion) {
+  return listarPaginado('/departments', token, paginacion)
+}
+
+export async function crearDepartamento(token, { name }) {
+  return laravelRequest('/departments', {
+    token,
+    method: 'POST',
+    body: JSON.stringify({ name }),
+  })
+}
+
+export async function obtenerDepartamento(token, id) {
+  return laravelRequest(`/departments/${id}`, { token, method: 'GET' })
+}
+
+export async function actualizarDepartamento(token, id, { name }) {
+  return laravelRequest(`/departments/${id}`, {
+    token,
+    method: 'PUT',
+    body: JSON.stringify({ name }),
+  })
+}
+
+// ---------------------------------------------------------------------------
+// Equipos y Características (Laravel). Igual que /brands y /departments:
+// solo exigen jwt.auth, sin rol. Se usa el mismo helper `laravelRequest`.
+//
+// Ojo con dos detalles de la API documentada:
+//  1. GET /equipments devuelve una vista REDUCIDA: { id, name, brand, serie,
+//     registeredBy } (la serie se agregó para buscar por serie en Equipos).
+//     No trae model / type / brand_id / original / is_used, así que para
+//     editar (o exportar esos datos) hay que pedir GET /equipments/{id}.
+//  2. GET /caracteristics también es reducido: { id, name, equipment } -- sin
+//     `description`. Para mostrar "Nombre: Descripción" hay que pedir el
+//     detalle de cada una. Eso hace `obtenerCaracteristicasDeEquipo`.
+// ---------------------------------------------------------------------------
+
+export async function listarEquipos(token, paginacion) {
+  return listarPaginado('/equipments', token, paginacion)
+}
+
+// Equipo sin entrega activa (nunca entregado, o su última entrega ya se
+// devolvió) -- es la lista correcta para elegir equipo al armar una entrega
+// nueva o al agregar uno a una ya existente, en vez de listarEquipos (que
+// trae TODO el inventario, incluido lo que ya está en manos de alguien).
+export async function listarEquiposDisponibles(token, { type, search } = {}) {
+  const params = new URLSearchParams()
+  if (type) params.set('type', type)
+  if (search) params.set('search', search)
+  const query = params.toString()
+  return laravelRequest(`/equipments/available${query ? `?${query}` : ''}`, { token, method: 'GET' })
+}
+
+// Historial de a quién se le ha entregado un equipo y si ya lo devolvió,
+// de la más reciente a la más antigua.
+export async function historialEquipo(token, id) {
+  return laravelRequest(`/equipments/${id}/history`, { token, method: 'GET' })
+}
+
+export async function obtenerEquipo(token, id) {
+  return laravelRequest(`/equipments/${id}`, { token, method: 'GET' })
+}
+
+export async function crearEquipo(token, payload) {
+  return laravelRequest('/equipments', {
+    token,
+    method: 'POST',
+    body: JSON.stringify(payload),
+  })
+}
+
+export async function actualizarEquipo(token, id, payload) {
+  return laravelRequest(`/equipments/${id}`, {
+    token,
+    method: 'PUT',
+    body: JSON.stringify(payload),
+  })
+}
+
+// NO hay función para DELETE /equipments/{id} (dar de baja) a propósito.
+// Se implementó el 2026-09-11 y se retiró el mismo día: al dar de baja un
+// equipo, los listados de entregas Y de devoluciones empiezan a responder 500
+// ("Attempt to read property 'name' on null"), porque leen el nombre desde el
+// registro del equipo y no incluyen los que están dados de baja. Los dos
+// historiales quedan caídos para todos. Volver a agregarla solo cuando el
+// backend incluya los equipos retirados al leer entregas y devoluciones.
+
+// Listado reducido de características. Sin `equipmentId` trae todas: se usa
+// una sola vez al cargar la pantalla para saber qué equipos tienen o no
+// características (Estado A / Estado B) sin pedir un detalle por fila.
+export async function listarCaracteristicas(token, equipmentId) {
+  const query = equipmentId ? `?equipmentId=${equipmentId}` : ''
+  return laravelRequest(`/caracteristics${query}`, { token, method: 'GET' })
+}
+
+export async function obtenerCaracteristica(token, id) {
+  return laravelRequest(`/caracteristics/${id}`, { token, method: 'GET' })
+}
+
+export async function crearCaracteristica(token, { name, description, equipment_id }) {
+  return laravelRequest('/caracteristics', {
+    token,
+    method: 'POST',
+    body: JSON.stringify({ name, description, equipment_id }),
+  })
+}
+
+export async function actualizarCaracteristica(token, id, { name, description, equipment_id }) {
+  return laravelRequest(`/caracteristics/${id}`, {
+    token,
+    method: 'PUT',
+    body: JSON.stringify({ name, description, equipment_id }),
+  })
+}
+
+// Características COMPLETAS (con descripción) de un equipo. El listado no
+// trae `description`, así que se pide el detalle de cada id en paralelo.
+export async function obtenerCaracteristicasDeEquipo(token, equipmentId) {
+  const reducidas = await listarCaracteristicas(token, equipmentId)
+  const lista = Array.isArray(reducidas) ? reducidas : []
+  if (lista.length === 0) return []
+  return Promise.all(lista.map((c) => obtenerCaracteristica(token, c.id)))
+}
+
+// ---------------------------------------------------------------------------
+// Empleados (Laravel): GET/POST /employees, PUT /employees/{id}. Mismo
+// candado que Marcas/Departamentos/Equipos: jwt.auth, sin rol.
+//
+// Avisos de la API, iguales a los de Equipos:
+//  - El POST no devuelve el registro completo (sin id ni fechas): tras crear
+//    hay que recargar la lista con listarEmpleados, no confiar en la
+//    respuesta del POST.
+//  - PUT exige los tres campos siempre (code, name, department_id), aunque
+//    el usuario solo cambie uno -- el formulario de edición reenvía todo lo
+//    precargado.
+// ---------------------------------------------------------------------------
+
+export async function listarEmpleados(token, paginacion) {
+  return listarPaginado('/employees', token, paginacion)
+}
+
+export async function obtenerEmpleado(token, id) {
+  return laravelRequest(`/employees/${id}`, { token, method: 'GET' })
+}
+
+export async function crearEmpleado(token, { code, name, department_id }) {
+  return laravelRequest('/employees', {
+    token,
+    method: 'POST',
+    body: JSON.stringify({ code, name, department_id }),
+  })
+}
+
+export async function actualizarEmpleado(token, id, { code, name, department_id }) {
+  return laravelRequest(`/employees/${id}`, {
+    token,
+    method: 'PUT',
+    body: JSON.stringify({ code, name, department_id }),
+  })
+}
+
+// Equipos que el empleado tiene AHORA: los detalles de sus entregas que
+// todavía no tienen devolución (el backend los saca de esta lista en cuanto se
+// registra la devolución). Cada uno trae delivery_document_id, así que se
+// puede enlazar con el acta de la que salió.
+export async function equiposDeEmpleado(token, id) {
+  return laravelRequest(`/employees/${id}/equipments`, { token, method: 'GET' })
+}
+
+// ---------------------------------------------------------------------------
+// Documentos de Entrega (Laravel): GET/POST /delivery_documents,
+// GET/DELETE /delivery_documents/{id}. Mismo candado que el resto: jwt.auth,
+// sin rol. El usuario autenticado queda registrado en user_id y la fecha de
+// entrega la pone el servidor -- ninguno de los dos se manda en el cuerpo.
+//
+// El alta es multipart/form-data (las dos firmas van como archivo), por eso
+// usa laravelRequestMultipart en vez de laravelRequest. Los equipos
+// entregados viajan como items[i][equipment_id] / items[i][observations]
+// dentro del mismo FormData -- quien arma ese FormData es FormatoActa.jsx.
+//
+// El POST no devuelve el documento creado (data: true); para leerlo hay que
+// pedir obtenerDocumentoEntrega con el listado recargado.
+// ---------------------------------------------------------------------------
+
+// CUIDADO (2026-09-11): el swagger documenta filtros opcionales para este
+// listado (`status`, `employeeId`, `location`), pero al probarlos el servidor
+// respondió con un error de PHP -- `GET /delivery_documents?location=1` →
+// "Attempt to read property 'name' on null". Por eso NO se usan: se pide el
+// listado completo, como siempre. Antes de volver a intentarlo, probarlos
+// contra el backend real. (`limit`/`page` sí se usan: son de la paginación
+// general, no filtros del recurso.)
+export async function listarDocumentosEntrega(token, paginacion) {
+  return listarPaginado('/delivery_documents', token, paginacion)
+}
+
+export async function obtenerDocumentoEntrega(token, id) {
+  return laravelRequest(`/delivery_documents/${id}`, { token, method: 'GET' })
+}
+
+export async function crearDocumentoEntrega(token, formData) {
+  return laravelRequestMultipart('/delivery_documents', { token, formData, method: 'POST' })
+}
+
+export async function eliminarDocumentoEntrega(token, id) {
+  return laravelRequest(`/delivery_documents/${id}`, { token, method: 'DELETE' })
+}
+
+// ---------------------------------------------------------------------------
+// Detalles de Documento de Entrega (delivery_document_details): mantenimiento
+// sobre una entrega YA creada -- agregar un equipo que se quedó fuera,
+// corregir la observación de uno ya entregado, o quitar un renglón que se
+// agregó por error. La creación normal de una entrega (con todos sus
+// equipos de una vez) sigue yendo por crearDocumentoEntrega; esto es solo
+// para editar después.
+//
+// El filtro `pending` (GET) deja solo los detalles sin devolución
+// registrada -- es la lista que usa la pantalla de Devolución para saber
+// qué sigue pendiente de esa entrega.
+// ---------------------------------------------------------------------------
+
+export async function listarDetallesEntrega(token, { deliveryDocumentId, equipmentId, pending } = {}) {
+  const params = new URLSearchParams()
+  if (deliveryDocumentId != null) params.set('deliveryDocumentId', deliveryDocumentId)
+  if (equipmentId != null) params.set('equipmentId', equipmentId)
+  // Laravel valida `pending` con la regla `boolean`, que en query string solo
+  // acepta 1/0 (no la cadena "true") -- ver paginacion.md §4 (`pending=1`).
+  if (pending) params.set('pending', '1')
+  const query = params.toString()
+  return laravelRequest(`/delivery_document_details${query ? `?${query}` : ''}`, { token, method: 'GET' })
+}
+
+export async function agregarDetalleEntrega(token, { delivery_document_id, equipment_id, observations }) {
+  return laravelRequest('/delivery_document_details', {
+    token,
+    method: 'POST',
+    body: JSON.stringify({ delivery_document_id, equipment_id, observations }),
+  })
+}
+
+// Solo corrige la observación: cambiar equipo o documento equivale a
+// rehacer la entrega (regla de la API).
+export async function actualizarDetalleEntrega(token, id, { observations }) {
+  return laravelRequest(`/delivery_document_details/${id}`, {
+    token,
+    method: 'PUT',
+    body: JSON.stringify({ observations }),
+  })
+}
+
+// Borrado definitivo (sin soft delete) -- la pantalla debe confirmar antes.
+export async function eliminarDetalleEntrega(token, id) {
+  return laravelRequest(`/delivery_document_details/${id}`, { token, method: 'DELETE' })
+}
+
+// ---------------------------------------------------------------------------
+// Documentos de Devolución (Laravel): GET/POST /return_documents,
+// GET/PUT /return_documents/{id}. Una devolución siempre nace de una entrega
+// (delivery_document_id) y puede ser parcial -- solo se envían los equipos
+// que regresan. Mismo candado que el resto: jwt.auth, sin rol. El usuario
+// autenticado queda en user_id y la fecha (return_date) la pone el servidor.
+//
+// El alta es multipart/form-data porque lleva las dos firmas como archivo
+// (igual que crearDocumentoEntrega); cada item apunta al
+// delivery_document_detail_id de la entrega original, no al equipment_id.
+// El POST no devuelve el documento creado (data: true); para leerlo hay que
+// pedir obtenerDocumentoDevolucion aparte.
+// ---------------------------------------------------------------------------
+
+export async function listarDocumentosDevolucion(token, { deliveryDocumentId, employeeId, limit, page } = {}) {
+  return listarPaginado('/return_documents', token, { limit, page }, { deliveryDocumentId, employeeId })
+}
+
+export async function obtenerDocumentoDevolucion(token, id) {
+  return laravelRequest(`/return_documents/${id}`, { token, method: 'GET' })
+}
+
+export async function crearDocumentoDevolucion(token, formData) {
+  return laravelRequestMultipart('/return_documents', { token, formData, method: 'POST' })
+}
+
+// Solo corrige observaciones generales de la devolución (ObservationsRequest
+// confirmado en el swagger) -- return_date lo asigna el servidor y no hay
+// forma de corregirlo después.
+export async function actualizarDocumentoDevolucion(token, id, { observations }) {
+  return laravelRequest(`/return_documents/${id}`, {
+    token,
+    method: 'PUT',
+    body: JSON.stringify({ observations }),
+  })
+}
+
+// Detalles de Documento de Devolución (return_document_details): cada
+// equipo incluido en una devolución. Lo normal es crearlos junto al
+// documento (crearDocumentoDevolucion); estas sirven para completar una
+// devolución ya firmada o corregir la observación de un equipo devuelto.
+export async function listarDetallesDevolucion(token, { returnDocumentId } = {}) {
+  const query = returnDocumentId != null ? `?returnDocumentId=${returnDocumentId}` : ''
+  return laravelRequest(`/return_document_details${query}`, { token, method: 'GET' })
+}
+
+export async function agregarDetalleDevolucion(
+  token,
+  { return_document_id, delivery_document_detail_id, observations },
+) {
+  return laravelRequest('/return_document_details', {
+    token,
+    method: 'POST',
+    body: JSON.stringify({ return_document_id, delivery_document_detail_id, observations }),
+  })
+}
+
+export async function actualizarDetalleDevolucion(token, id, { observations }) {
+  return laravelRequest(`/return_document_details/${id}`, {
+    token,
+    method: 'PUT',
+    body: JSON.stringify({ observations }),
+  })
+}
+
+// URL pública de un archivo del disco "public" de Laravel (las firmas se
+// guardan ahí como ruta relativa, ej. "signatures/uuid.png"). Por defecto,
+// Storage::disk('public')->url($path) en Laravel arma esa URL como
+// APP_URL + '/storage/' + la ruta -- que es la misma URL/puerto de
+// AUTH_API_URL sin el '/api' final. Si el backend sirve los archivos desde
+// otro dominio, se puede fijar VITE_STORAGE_URL en .env sin tocar este
+// archivo.
+const STORAGE_BASE_URL = (
+  env('VITE_STORAGE_URL') || AUTH_API_URL.replace(/\/api\/?$/, '')
+).replace(/\/$/, '')
+
+// Si el backend ya manda un link completo (ej. un bucket de S3, como
+// "https://...amazonaws.com/signatures/....png"), se usa tal cual -- pegarle
+// STORAGE_BASE_URL por delante lo rompería. Solo se arma el link local
+// (STORAGE_BASE_URL + /storage/) cuando lo que llega es la ruta corta que
+// documenta el swagger (ej. "signatures/....png").
+export function urlArchivoPublico(path) {
+  if (!path) return null
+  if (/^https?:\/\//i.test(path)) return path
+  return `${STORAGE_BASE_URL}/storage/${path}`
+}
+
+export default {
+  login,
+  checkStatus,
+  registrarUsuario,
+  obtenerAuditoria,
+  exportarAuditoriaExcel,
+  listarUsuarios,
+  obtenerUsuario,
+  crearUsuario,
+  editarUsuario,
+  listarMarcas,
+  crearMarca,
+  obtenerMarca,
+  actualizarMarca,
+  listarDepartamentos,
+  crearDepartamento,
+  obtenerDepartamento,
+  actualizarDepartamento,
+  listarEquipos,
+  obtenerEquipo,
+  crearEquipo,
+  actualizarEquipo,
+  listarEquiposDisponibles,
+  historialEquipo,
+  listarCaracteristicas,
+  obtenerCaracteristica,
+  crearCaracteristica,
+  actualizarCaracteristica,
+  obtenerCaracteristicasDeEquipo,
+  listarEmpleados,
+  obtenerEmpleado,
+  crearEmpleado,
+  actualizarEmpleado,
+  equiposDeEmpleado,
+  listarDocumentosEntrega,
+  obtenerDocumentoEntrega,
+  crearDocumentoEntrega,
+  eliminarDocumentoEntrega,
+  listarDetallesEntrega,
+  agregarDetalleEntrega,
+  actualizarDetalleEntrega,
+  eliminarDetalleEntrega,
+  listarDocumentosDevolucion,
+  obtenerDocumentoDevolucion,
+  crearDocumentoDevolucion,
+  actualizarDocumentoDevolucion,
+  listarDetallesDevolucion,
+  agregarDetalleDevolucion,
+  actualizarDetalleDevolucion,
+  urlArchivoPublico,
+}
