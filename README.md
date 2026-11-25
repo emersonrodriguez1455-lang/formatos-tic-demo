@@ -8,6 +8,14 @@ Sistema interno del área de TIC de Agroindustria Legumex para registrar la entr
 
 ![Historial de entregas](docs/historial-entregas.png)
 
+## Video
+
+Recorrido de menos de un minuto por las funciones principales (actas de entrega y devolución, firmas en pantalla, modo oscuro, permisos por rol y vista en el teléfono), con datos de demostración.
+
+[![Ver el video del recorrido](docs/video/formatos-tic-recorrido.jpg)](docs/video/formatos-tic-recorrido.mp4)
+
+▶️ [Ver el video (MP4)](docs/video/formatos-tic-recorrido.mp4)
+
 ## Qué problema resuelve
 
 Formatos TIC lleva el control de qué equipo tiene cada colaborador, en qué estado se entregó y cuándo se devolvió. Las actas reproducen la hoja física del departamento de TIC: se llenan en pantalla, se firman en el mismo dispositivo y se descargan en PDF con el formato oficial. El sistema quedó en uso en el área de TIC.
